@@ -1,0 +1,24 @@
+name: Code Quality
+
+on: [ push, pull_request ]
+
+jobs:
+  busted:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Busted
+        uses: lunarmodules/busted@v2.2.0
+
+  luacheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Luacheck
+        uses: lunarmodules/luacheck@v1.2.0
+        with:
+          args: . --no-self
