@@ -1,11 +1,12 @@
 # grimmory.koplugin
 
+> [!WARNING]
+> This is beta software and may have bugs or other inadvertent behaviors.
+> 
+> Beware, that makes you a beta tester.  Please report these any bugs or issues.
+
 Read your books from Grimmory, sync your shelves, and track reading
 progress automatically.
-
-> [!IMPORTANT]
-> This is beta software and may have bugs or other inadvertent behaviors.
-> Please report these as issues so they may be fixed.
 
 ## Installation
 
