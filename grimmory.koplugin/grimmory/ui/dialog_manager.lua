@@ -360,11 +360,15 @@ function DialogManager:showPluginUpdater()
     end)
 end
 
-function DialogManager:showProgressDialog(title, dismiss_callback)
+function DialogManager:showProgressDialog(title, dismiss_callback, dismiss_text)
     local dialog
     local is_closing = false
 
     if dismiss_callback ~= nil then
+        if dismiss_text == nil then
+            dismiss_text = _("Terminate this task?")
+        end
+
         dismiss_callback = function()
             if is_closing then
                 -- The dismiss callback is fired even when
@@ -374,7 +378,7 @@ function DialogManager:showProgressDialog(title, dismiss_callback)
             end
 
             local confirm_dialog = ConfirmBox:new({
-                text = _("Cancel Synchronization?"),
+                text = dismiss_text,
                 ok_callback = function()
                     pcall(dismiss_callback)
                     UIManager:close(dialog)
