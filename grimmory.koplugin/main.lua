@@ -45,17 +45,17 @@ local Grimmory = WidgetContainer:extend{
 }
 
 function Grimmory:onDispatcherRegisterActions()
-  Dispatcher:registerAction("grimmory_sync", {
+  Dispatcher:registerAction("grimmory_sync_foreground", {
     category = "none",
-    event = "GrimmorySync",
+    event = "GrimmorySyncForegound",
     title = _("Grimmory: Sync Now"),
     general = true,
   })
 
-  Dispatcher:registerAction("grimmory_settings", {
+  Dispatcher:registerAction("grimmory_sync_background", {
     category = "none",
-    event = "GrimmorySettingsChanged",
-    title = _("Grimmory: Settings Changed"),
+    event = "GrimmorySyncBackground",
+    title = _("Grimmory: Sync in Background"),
     general = true,
   })
 end
@@ -142,7 +142,7 @@ function Grimmory:onSuspend()
     self.reading_recorder:onSessionEnd()
 
     if self.settings:getSyncOnSuspend() then
-       self:onGrimmorySync()
+       self:onGrimmorySync(false)
     end
 end
 
@@ -162,7 +162,7 @@ function Grimmory:onPowerOff()
     self.reading_recorder:onSessionEnd()
 
     if self.settings:getSyncOnPowerOff() then
-       self:onGrimmorySync()
+       self:onGrimmorySync(false)
     end
 end
 
@@ -195,7 +195,7 @@ function Grimmory:onCloseDocument()
     if self.settings:getSyncOnCloseDocument() then
         -- Do not block the UI thread
         UIManager:nextTick(function()
-            self:onGrimmorySync()
+            self:onGrimmorySync(false)
         end)
     end
 end
@@ -224,7 +224,7 @@ function Grimmory:onSchedulePeriodicPush()
             local cancel, update = self.scheduler:interval(
                 frequency_seconds,
                 function()
-                    self:onGrimmorySync()
+                    self:onGrimmorySync(false)
                 end
             )
 
@@ -308,6 +308,16 @@ function Grimmory:isReadyToSync()
     end
 
     return true
+end
+
+function Grimmory:onGrimmorySyncForegound()
+    logger:info("FOREGROUND")
+    return self:onGrimmorySync(true)
+end
+
+function Grimmory:onGrimmorySyncBackground()
+    logger:info("BG")
+    return self:onGrimmorySync(false)
 end
 
 function Grimmory:onGrimmorySync(verbose)
