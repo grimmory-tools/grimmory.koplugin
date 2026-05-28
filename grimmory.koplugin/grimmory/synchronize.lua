@@ -89,7 +89,7 @@ function GrimmorySynchronize:synchronizeSessions(callback)
             callback({
                 state = "session-skip",
                 bookPath = session.book_path,
-                since = session.start_time,
+                since = session.end_time,
             })
         else
             logger:dbg(
@@ -126,14 +126,14 @@ function GrimmorySynchronize:synchronizeSessions(callback)
                 callback({
                     state = "session-recorded",
                     bookPath = session.book_path,
-                    since = session.start_time,
+                    since = session.end_time,
                 })
             else
                 logger:err("Session failed recording with error for book: ", session.book_path, " - ", body)
                 callback({
                     state = "session-error",
                     bookPath = session.book_path,
-                    since = session.start_time,
+                    since = session.end_time,
                 })
             end
         end
