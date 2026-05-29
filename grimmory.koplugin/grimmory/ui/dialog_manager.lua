@@ -39,12 +39,15 @@ function DialogManager:toast(text, timeout)
         timeout = nil
     end
 
-    self.info_message = InfoMessage:new({
+    local info_message = InfoMessage:new({
         text = text,
         timeout = timeout,
     })
 
-    UIManager:show(self.info_message)
+    UIManager:show(info_message)
+    self.info_message = info_message
+
+    return function() UIManager:close(info_message) end
 end
 
 function DialogManager:showConnectionSettings()
@@ -289,19 +292,28 @@ function DialogManager:showDownloadDirectorySettings()
     UIManager:show(dialog)
 end
 
-function DialogManager:showPluginUpdateCheck()
+function DialogManager:showPluginUpdateCheck(skip_version_check)
+    if not skip_version_check then
+        -- Refresh the latest version on open.
+        local close_message = self:toast(_("Checking for Updates"), 0)
+        self.updater:fetchLatestVersion()
+        pcall(close_message)
+    end
+
     local dialog
     local latest_version = self.updater:getLatestReleaseVersion()
     local is_update_available = self.updater:isUpdateAvailable()
 
     local update_button_text = _("No update available")
+    local title = _("Grimmory.koplugin is currently up-to-date.")
 
     if is_update_available then
         update_button_text = T(_("Update to %1"), latest_version)
+        title = _("Update available for Grimmory.koplugin.")
     end
 
     dialog = ButtonDialog:new({
-        title = T(_("Update Grimmory Plugin\nLatest release is %1"), latest_version),
+        title = title,
         buttons = {
             {
                 {
@@ -319,7 +331,7 @@ function DialogManager:showPluginUpdateCheck()
                     callback = function()
                         self.updater:fetchLatestVersion()
                         UIManager:close(dialog)
-                        self:showPluginUpdateCheck()
+                        self:showPluginUpdateCheck(true)
                     end,
                 },
             },

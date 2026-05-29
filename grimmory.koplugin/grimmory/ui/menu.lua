@@ -49,19 +49,6 @@ function GrimmoryMenu:getAboutMenu()
         },
         {
             text_func = function()
-                return _("Automatically Check for Updates")
-            end,
-            checked_func = function()
-                return self.settings:getAutomaticCheckUpdates()
-            end,
-            callback = function()
-                self.settings:toggleAutomaticCheckUpdates()
-                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text_func = function()
                 if self.updater:isPendingRestart() then
                     return _("Update Pending Restart")
                 end

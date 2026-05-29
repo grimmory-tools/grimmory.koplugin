@@ -329,17 +329,4 @@ function GrimmorySettings:setSynchronizedUntil(timestamp)
     self:write()
 end
 
-function GrimmorySettings:getAutomaticCheckUpdates()
-    if self.data.automatic_check_updates == nil then
-        return DEFAULTS.automatic_check_updates
-    end
-
-    return self.data.automatic_check_updates
-end
-
-function GrimmorySettings:toggleAutomaticCheckUpdates()
-    self.data.automatic_check_updates = not self:getAutomaticCheckUpdates()
-    self:write()
-end
-
 return GrimmorySettings
