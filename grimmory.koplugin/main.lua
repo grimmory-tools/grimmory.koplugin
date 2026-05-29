@@ -326,21 +326,22 @@ function Grimmory:onGrimmorySyncBackground()
 end
 
 function Grimmory:onGrimmorySync(verbose)
-    if not self:isReadyToSync() then
-        return false
-    end
-
-    self.is_synchronizing = true
-
     local function sync_callback()
         if not self.wifi_manager:isConnected() then
             logger:err("Cannot sync without connectivity")
             return
         end
 
+        local should_terminate = false
+
+        if not self:isReadyToSync() then
+            return
+        end
+
         logger:info("Synchronizing to Grimmory")
 
-        local should_terminate = false
+        self.is_synchronizing = true
+        self.menu:onGrimmorySyncStart(function() should_terminate = true end)
 
         local update_callback, close_callback
         if verbose then
@@ -352,8 +353,6 @@ function Grimmory:onGrimmorySync(verbose)
                 _("Are you sure you want to interrupt synchronization?")
             )
         end
-
-        self.menu:onGrimmorySyncStart(function() should_terminate = true end)
 
         local indeterminate_progress = 0
         local session_count = 0
@@ -409,7 +408,7 @@ function Grimmory:onGrimmorySync(verbose)
         )
 
         if close_callback then
-            close_callback()
+            pcall(close_callback)
         end
 
         if not ok then
@@ -431,6 +430,8 @@ function Grimmory:onGrimmorySync(verbose)
                 end
             end
 
+            self.is_synchronizing = false
+            self.menu:onGrimmorySyncComplete()
             return
         end
 
