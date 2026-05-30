@@ -403,7 +403,7 @@ function Grimmory:onGrimmorySync(verbose)
 
                 if verbose then
                     self.dialog_manager:toast(
-                        _("Failed to Synchronize to Grimmory")
+                        _("Failed to Synchronize with Grimmory")
                     )
                 end
             end

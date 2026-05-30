@@ -546,7 +546,7 @@ end
 
 function GrimmorySynchronize:synchronizeAll(callback)
     if not self:checkForHealthyServer() then
-        return
+        return error("Cannot connect to valid server")
     end
 
     -- Refresh so we pull fresh books
