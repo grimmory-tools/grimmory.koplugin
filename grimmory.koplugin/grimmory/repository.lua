@@ -523,12 +523,10 @@ function GrimmoryLocalRepository:getPendingSessions(book_id)
                 collapsedSession = true
                 sessions[#sessions].end_time = math.max(event.timestamp, sessions[#sessions].end_time)
 
-                -- If the "progress" is further
-                if read_progress > sessions[#sessions].end_progress then
-                    sessions[#sessions].end_page = event.page
-                    sessions[#sessions].end_progress = read_progress
-                    sessions[#sessions].end_xpointer = event.xpointer
-                end
+                -- se tthe values to whatever the last event has
+                sessions[#sessions].end_page = event.page
+                sessions[#sessions].end_progress = read_progress
+                sessions[#sessions].end_xpointer = event.xpointer
             end
         end
 
