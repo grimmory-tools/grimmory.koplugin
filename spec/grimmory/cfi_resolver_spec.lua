@@ -1,0 +1,244 @@
+local assert = require 'luassert'
+local spy = require 'luassert.spy'
+local stub = require 'luassert.stub'
+
+package.path = "grimmory.koplugin/?.lua;" .. package.path
+
+local fake_logger = {
+    err = spy.new(function() end),
+    info = spy.new(function() end),
+    dbg = spy.new(function() end),
+}
+
+package.preload["grimmory/logger"] = function()
+    return {
+        new = function()
+            return fake_logger
+        end
+    }
+end
+
+local fake_cache = {}
+
+package.preload["cache"] = function()
+    return {
+        new = function()
+            return {
+                get = function(_, key)
+                    return fake_cache[tostring(key)]
+                end,
+                insert = function(_, key, value)
+                    fake_cache[tostring(key)] = value
+                end
+            }
+        end,
+    }
+end
+
+local fake_document = stub.new()
+local mock_has_provider = spy.new(function() return true end)
+local mock_open_document = spy.new(function() return fake_document end)
+
+package.preload["document/documentregistry"] = function()
+    return {
+        hasProvider = mock_has_provider,
+        openDocument = mock_open_document,
+    }
+end
+
+local GrimmoryCFIResolver = require("grimmory/cfi_resolver")
+
+local EXAMPLE_HTML = [[CDATA
+<html>
+    <head>
+    </head>
+    <body>
+        <div id="chapter2">
+            <h1>Chapter 2</h1>
+            <p>Content of chapter <code>two</code>.</p>
+            <p>
+                Second paragraph
+                with
+                <bold>more</bold> text.
+            </p>
+        </div>
+    </body>
+</html>
+]]
+
+describe("GrimmoryCFIResolver", function()
+    before_each(function()
+        fake_document.load_document = spy.new(function() return true end)
+        fake_document.getHTMLFromXPointer = spy.new(function() return "<DocFragment Source=\"example.html\">" end)
+        fake_document.getDocumentFileContent = spy.new(function() return EXAMPLE_HTML end)
+        fake_document.close = spy.new(function() end)
+
+        for key in pairs(fake_cache) do
+            fake_cache[key] = nil
+        end
+    end)
+
+    describe("cfiToXpointer", function()
+        it("converts simple xpointer", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/4)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/div/p",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing second occurrence", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/6)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/div/p[2]",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing text", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/4/1:3)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/div/p/text().3",
+                actual
+            )
+        end)
+
+        it("converts xpointer mapping text offsets", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/6/1:19)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/div/p[2]/text().3",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing text in between elements", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/6/3:3)"
+            )
+
+            assert.are.equal(
+            "/body/DocFragment[12]/body/div/p[2]/text()[2].3",
+                actual
+            )
+        end)
+    end)
+
+    describe("xpointerToCFI", function()
+        it("converts simple xpointer", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerToCFI(
+                "/body/DocFragment[12]/body/div/p"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/4)",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing second occurrence", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerToCFI(
+                "/body/DocFragment[12]/body/div/p[2]"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/6)",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing text", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerToCFI(
+                "/body/DocFragment[12]/body/div/p/text().3"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/4/1:3)",
+                actual
+            )
+        end)
+
+        it("converts xpointer mapping text offsets", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerToCFI(
+                "/body/DocFragment[12]/body/div/p[2]/text().3"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/6/1:19)",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing text in between elements", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerToCFI(
+                "/body/DocFragment[12]/body/div/p[2]/text()[2].3"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/6/3:3)",
+                actual
+            )
+        end)
+    end)
+
+    describe("xpointerRangeToCFI", function()
+        it("supports ranges between two block nodes", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerRangeToCFI(
+                "/body/DocFragment[12]/body/div/p",
+                "/body/DocFragment[12]/body/div/p[2]"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2,/4,/6)",
+                actual
+            )
+        end)
+
+        it("supports ranges between block and inline", function()
+            local cfi_resolver = GrimmoryCFIResolver:new("example.html")
+
+            local actual = cfi_resolver:xpointerRangeToCFI(
+                "/body/DocFragment[12]/body/div/p/text()[1].2",
+                "/body/DocFragment[12]/body/div/p/code[1]/text().2"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/4,/1:2,/2/1:2)",
+                actual
+            )
+        end)
+    end)
+end)
