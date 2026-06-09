@@ -385,6 +385,10 @@ end
 local function split_local_range_cfi_path(cfi)
     local root, path_a, path_b = cfi:match("^([^,]+),([^,]+),([^,]+)$")
 
+    if root == nil or path_a == nil or path_b == nil then
+        error("invalid CFI range")
+    end
+
     return root .. path_a, root .. path_b
 end
 
