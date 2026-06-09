@@ -616,6 +616,11 @@ function GrimmoryCFIResolver:cfiToXpointer(cfi)
 
     local fragment_html = self:getFragmentHTML(fragment_index)
 
+    if fragment_html == nil then
+        logger:err("Unable to load fragment HTML for CFI:", cfi)
+        error("Unable to load fragment HTML for CFI")
+    end
+
     local fragment_path = self:cfiLocalPathToFragmentPath(fragment_html, local_path)
 
     return "/body/DocFragment[" .. tostring(fragment_index) .. "]" .. fragment_path
