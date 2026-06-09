@@ -68,7 +68,7 @@ local EXAMPLE_HTML = [[CDATA
 
 describe("GrimmoryCFIResolver", function()
     before_each(function()
-        fake_document.load_document = spy.new(function() return true end)
+        fake_document.loadDocument = spy.new(function() return true end)
         fake_document.getHTMLFromXPointer = spy.new(function() return "<DocFragment Source=\"example.html\">" end)
         fake_document.getDocumentFileContent = spy.new(function() return EXAMPLE_HTML end)
         fake_document.close = spy.new(function() end)
