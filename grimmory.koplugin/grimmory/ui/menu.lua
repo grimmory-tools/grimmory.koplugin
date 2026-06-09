@@ -72,7 +72,7 @@ function GrimmoryMenu:getAboutMenu()
     }
 end
 
-function GrimmoryMenu:getSyncOptionsMenu()
+function GrimmoryMenu:getAutomaticSyncOptionsMenu()
     return {
         {
             text = _("On Close Document"),
@@ -142,6 +142,38 @@ function GrimmoryMenu:getSyncOptionsMenu()
     }
 end
 
+function GrimmoryMenu:getSyncOptionsMenu()
+    return {
+        {
+            text = _("Sync Reading Sessions"),
+            checked_func = function()
+                return self.settings:getSyncReadingSessions()
+            end,
+            callback = function()
+                self.settings:toggleSyncReadingSessions()
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+        },
+        {
+            text = _("Reading Session Thresholds"),
+            callback = function()
+                self.dialog_manager:showSessionThresholdSettings()
+            end,
+            separator = true,
+        },
+        {
+            text = _("Sync Reading Progress"),
+            checked_func = function()
+                return self.settings:getSyncReadingProgress()
+            end,
+            callback = function()
+                self.settings:toggleSyncReadingProgress()
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+        },
+    }
+end
+
 function GrimmoryMenu:getTopMenu()
     local menu = {
         {
@@ -152,8 +184,12 @@ function GrimmoryMenu:getTopMenu()
         },
         {
             text = _("Automatic Sync"),
+            sub_item_table = self:getAutomaticSyncOptionsMenu()
+        },
+        {
+            text = _("Sync Configuration"),
+            sub_item_table = self:getSyncOptionsMenu(),
             separator = true,
-            sub_item_table = self:getSyncOptionsMenu()
         },
         {
             text = _("Download Books"),
@@ -199,33 +235,6 @@ function GrimmoryMenu:getTopMenu()
             end,
             callback = function()
                 self.dialog_manager:showTargetShelvesSettings()
-            end,
-            separator = true,
-        },
-        {
-            text = _("Sync Reading Sessions"),
-            checked_func = function()
-                return self.settings:getSyncReadingSessions()
-            end,
-            callback = function()
-                self.settings:toggleSyncReadingSessions()
-                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
-            end,
-        },
-        {
-            text = _("Reading Session Thresholds"),
-            callback = function()
-                self.dialog_manager:showSessionThresholdSettings()
-            end,
-            separator = true,
-        },
-        {
-            text = _("Sync Reading Progress"),
-            checked_func = function()
-                return self.settings:getSyncReadingProgress()
-            end,
-            callback = function()
-                self.settings:toggleSyncReadingProgress()
             end,
             separator = true,
         },
