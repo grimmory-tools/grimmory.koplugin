@@ -213,6 +213,16 @@ function GrimmoryMenu:getDownloadOptionsMenu()
             end,
             separator = true,
         },
+        {
+            text = _("Remove Books when Remote Missing"),
+            checked_func = function()
+                return self.settings:getDownloadRemoveBooks()
+            end,
+            callback = function()
+                self.settings:toggleDownloadRemoveBooks()
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+        }
     }
 end
 
