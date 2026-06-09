@@ -271,7 +271,7 @@ end
 
 ---@param text string
 ---@param character_offset number
----@param ignore_whitespace boolean whether to ignore inconsequential whitespace - true for going to xpointer, false for CFI
+---@param ignore_whitespace boolean ignore inconsequential whitespace - true for xpointer, false for CFI
 ---@return number
 local function translate_character_offset(text, character_offset, ignore_whitespace)
     local newline_count = 0
