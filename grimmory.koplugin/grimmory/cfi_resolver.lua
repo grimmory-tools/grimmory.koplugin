@@ -514,7 +514,7 @@ end
 ---@return string cfi_local_path
 function GrimmoryCFIResolver:fragmentPathToCFILocalPath(fragment_html, fragment_path)
     if #fragment_path == 0 or #fragment_html == 0 then
-        return "/:0"
+        return "/1"
     end
 
     local tokens = tokenize_html(fragment_html)
