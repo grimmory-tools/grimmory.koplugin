@@ -90,6 +90,13 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
                 bookPath = session.book_path,
                 since = session.end_time,
             })
+        elseif session.grimmory_id == nil then
+            logger:err("Session failed recording with error for book: ", book_id, " - ", "No Grimmory ID")
+            callback({
+                state = "session-error",
+                bookPath = session.book_path,
+                since = session.end_time,
+            })
         else
             logger:dbg(
                 "Recording session",
