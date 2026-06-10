@@ -211,7 +211,7 @@ function GrimmorySynchronize:isTargetShelf(shelf_id)
 end
 
 function GrimmorySynchronize:synchronizeShelves(callback)
-    if not self.settings:getDownloadsBooks() then
+    if not self.settings:getSyncShelves() then
         logger:info("Shelf sync skipped because feature is disabled")
         return
     end
@@ -228,7 +228,7 @@ function GrimmorySynchronize:synchronizeShelves(callback)
 
     -- Make sure we have our unique shelf names and ID mappings
     for _, shelf in ipairs(shelves) do
-        if shelf.id and shelf.name and self:isTargetShelf(shelf.id) then
+        if shelf.id and shelf.name then
             local shelf_name = shelf.name
 
             logger:dbg("Shelf received from Grimmory", shelf.id, shelf_name)
@@ -327,6 +327,35 @@ function GrimmorySynchronize:synchronizeShelves(callback)
                 shelf_id = shelf_id,
                 shelf_name = shelf_name,
             })
+        end
+    end
+
+    -- Persist collections to the database now that we've finished our sync
+    ReadCollection:write()
+end
+
+function GrimmorySynchronize:removeEmptyShelves(callback)
+    if self.settings:getSyncEmptyShelves() then
+        logger:info("Shelf clean up sync skipped because feature is disabled")
+        return
+    end
+
+    -- Read through existing collections and compare against shelves
+    for collection_name, _ in pairs(ReadCollection.coll) do
+        local shelf_id = ReadCollection.coll_settings[collection_name].connectorId
+        local books = ReadCollection:getOrderedCollection(collection_name)
+
+        if shelf_id and #books == 0 then
+            -- This is a grimmory shelf and is empty
+            logger:info("Removing empty shelf:", collection_name)
+
+            callback({
+                state = "shelf-remove",
+                shelf_id = shelf_id,
+                shelf_name = collection_name,
+            })
+
+            ReadCollection:removeCollection(collection_name)
         end
     end
 
@@ -446,7 +475,7 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
             remote_shelves[collection_name] = true
 
             if not local_shelves[collection_name] then
-                logger:dbg("Adding book to collection:", book_path, collection_name)
+                logger:info("Adding book to collection:", book_path, collection_name)
                 ReadCollection:addItem(book_path, collection_name)
             end
         end
@@ -455,7 +484,7 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
     -- Remove any current collections that are not current shelves.
     for collection_name, _ in pairs(local_shelves) do
         if not remote_shelves[collection_name] then
-            logger:dbg("Removing book from collection:", book_path, collection_name)
+            logger:info("Removing book from collection:", book_path, collection_name)
             ReadCollection:removeItem(book_path, collection_name)
         end
     end
@@ -590,6 +619,9 @@ function GrimmorySynchronize:synchronizeAll(callback)
     -- reading progress may change the books we sync down
     logger:info("Pulling books")
     self:pullBooks(callback)
+
+    -- Clean up empty shelves
+    self:removeEmptyShelves(callback)
 
     logger:info("Done synchronizing")
 end

@@ -34,6 +34,8 @@ local logger = GrimmoryLogger:new()
 ---@field sync_download_directory string
 ---@field sync_reading_sessions boolean
 ---@field sync_reading_progress boolean
+---@field sync_shelves_as_collections boolean
+---@field sync_empty_shelves boolean
 ---@field device_id string
 ---@field device_name string
 
@@ -56,6 +58,8 @@ local DEFAULTS = {
     sync_download_directory = "grimmory/",
     sync_reading_sessions = true,
     sync_reading_progress = true,
+    sync_shelves_as_collections = true,
+    sync_empty_shelves = false,
     device_id = random.uuid(),
     device_name = Device.model,
 }
@@ -241,6 +245,32 @@ end
 
 function GrimmorySettings:toggleSyncReadingSessions()
     self.data.sync_reading_sessions = not self.data.sync_reading_sessions
+    self:write()
+end
+
+function GrimmorySettings:getSyncShelves()
+    if self.data.sync_shelves_as_collections == nil then
+        return DEFAULTS.sync_shelves_as_collections
+    end
+
+    return self.data.sync_shelves_as_collections
+end
+
+function GrimmorySettings:toggleSyncShelves()
+    self.data.sync_shelves_as_collections = not self:getSyncShelves()
+    self:write()
+end
+
+function GrimmorySettings:getSyncEmptyShelves()
+    if self.data.sync_empty_shelves == nil then
+        return DEFAULTS.sync_empty_shelves
+    end
+
+    return self.data.sync_empty_shelves
+end
+
+function GrimmorySettings:toggleSyncEmptyShelves()
+    self.data.sync_empty_shelves = not self:getSyncEmptyShelves()
     self:write()
 end
 
