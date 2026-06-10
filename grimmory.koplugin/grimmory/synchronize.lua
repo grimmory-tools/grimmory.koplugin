@@ -370,9 +370,8 @@ function GrimmorySynchronize:downloadBook(book_id, download_path)
 end
 
 ---@param book Book
----@param filename string
 ---@return string download_path
-function GrimmorySynchronize:getBookDownloadPath(book, filename)
+function GrimmorySynchronize:getBookDownloadPath(book)
     local existing_book_ok, existing_book_path = self.repository:findBookByGrimmoryId(book.id)
     if existing_book_ok and existing_book_path then
         return existing_book_path
@@ -384,29 +383,35 @@ function GrimmorySynchronize:getBookDownloadPath(book, filename)
         error("Download directory is invalid")
     end
 
-    local download_path = download_directory .. "/" .. util.getSafeFilename(filename)
+    if book.primary_file then
+        local download_path = download_directory .. "/" .. util.getSafeFilename(book.primary_file.filename)
 
-    -- If this path doesn't exist yet, we're good, bail early
-    if not util.fileExists(download_path) then
-        return download_path
-    end
+        -- If this path doesn't exist yet, we're good, bail early
+        if not util.fileExists(download_path) then
+            return download_path
+        end
 
-    -- If the path exists we have to check to make sure that it is actually the book we care about
-    if self.doc_metadata:isBook(download_path, book) then
-        -- We have a match, this path is safe.
-        return download_path
+        -- If the path exists we have to check to make sure that it is actually the book we care about
+        if self.doc_metadata:isBook(download_path, book) then
+            -- We have a match, this path is safe.
+            return download_path
+        end
     end
 
     -- At this point we need a fallback name.  `downloaded-${BOOK_ID}.${EXT}` is not
     -- great but I don't know a better safe way off hand.
 
-    local file_extension = util.getFileNameSuffix(filename)
+    local file_extension = nil
+
+    if book.primary_file ~= nil then
+        file_extension = util.getFileNameSuffix(book.primary_file.filename)
+    end
 
     if file_extension == "" or file_extension == nil then
         file_extension = "bin"
     end
 
-    download_path = download_directory .. "/downloaded-" .. tonumber(book.id) .. "." .. file_extension
+    local download_path = download_directory .. "/downloaded-" .. tonumber(book.id) .. "." .. file_extension
 
     -- If this path doesn't exist yet, we're good?
     if not util.fileExists(download_path) then
@@ -464,12 +469,11 @@ end
 
 
 ---@param book Book
----@param filename string
 ---@return string download_path
-function GrimmorySynchronize:pullBook(book, filename)
+function GrimmorySynchronize:pullBook(book)
     local book_exists = false
 
-    local download_path = self:getBookDownloadPath(book, filename)
+    local download_path = self:getBookDownloadPath(book)
 
     -- TODO: Search through known books from collections for this book
     --       If found, set the `download path to that value.
