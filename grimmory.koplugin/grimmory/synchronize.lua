@@ -512,6 +512,18 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
     end
 end
 
+---@param book_path string
+---@return boolean found
+function GrimmorySynchronize:associateBook(book_path)
+    for book in self.api:getBooks() do
+        if self.doc_metadata:isBook(book_path, book) then
+            self.repository:upsertBook(book_path, book.id)
+            return true
+        end
+    end
+
+    return false
+end
 
 ---@param book Book
 ---@return string download_path
@@ -709,10 +721,21 @@ function GrimmorySynchronize:synchronizeBook(book_path, callback)
     end
 
     -- Get book ID
-    local book_ok, book_id = self.repository:upsertBook(book_path)
+    local book_ok, book_id, grimmory_id = self.repository:upsertBook(book_path)
 
     if not book_ok or not book_id then
         error("Could not track book")
+    end
+
+    if grimmory_id == nil then
+        -- Try to find a grimmory ID for this book
+        logger:info("Searching Grimmory for book:", book_path)
+
+        if self:associateBook(book_path) then
+            logger:info("Found book in Grimmory:", book_path)
+        else
+            logger:warn("Unable to locate book in Grimmory:", book_path)
+        end
     end
 
     -- First, tell Grimmory about all of our reading
