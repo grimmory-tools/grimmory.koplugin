@@ -452,6 +452,8 @@ function GrimmorySynchronize:getBookDownloadPath(book)
     return download_path
 end
 
+---@param book_path string
+---@param shelves integer[]
 function GrimmorySynchronize:associateWithShelves(book_path, shelves)
     local local_shelves = {}
     local shelf_id_to_name = {}
@@ -475,7 +477,7 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
             remote_shelves[collection_name] = true
 
             if not local_shelves[collection_name] then
-                logger:info("Adding book to collection:", book_path, collection_name)
+                logger:dbg("Adding book to collection:", book_path, collection_name)
                 ReadCollection:addItem(book_path, collection_name)
             end
         end
@@ -484,7 +486,7 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
     -- Remove any current collections that are not current shelves.
     for collection_name, _ in pairs(local_shelves) do
         if not remote_shelves[collection_name] then
-            logger:info("Removing book from collection:", book_path, collection_name)
+            logger:dbg("Removing book from collection:", book_path, collection_name)
             ReadCollection:removeItem(book_path, collection_name)
         end
     end
@@ -534,7 +536,7 @@ function GrimmorySynchronize:pullBook(book, callback)
     if book_exists and download_path then
         -- After we're done, if the book exists we should attach it
         -- to associated shelves.
-        self:associateWithShelves(download_path, book.shelves)
+        self:associateWithShelves(download_path, book.shelves or {})
         self.repository:upsertBook(download_path, book.id)
     end
 
