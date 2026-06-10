@@ -147,10 +147,11 @@ end
 ---@param grimmory_id number | nil
 ---@return boolean ok
 ---@return integer | nil book_id
+---@return integer | nil grimmory_id
 function GrimmoryLocalRepository:upsertBook(book_path, grimmory_id)
     local partial_md5 = util.partialMD5(book_path)
 
-    local ok, book_id = self:withDatabase(
+    local ok, book = self:withDatabase(
         function(conn)
             -- Remember that `OR IGNORE` will ignore almost all
             -- data type or constraint failures.
@@ -188,7 +189,9 @@ function GrimmoryLocalRepository:upsertBook(book_path, grimmory_id)
             local book_id = tonumber(row[1])
             local existing_grimmory_id = tonumber(row[2])
 
-            if existing_grimmory_id ~= grimmory_id and grimmory_id ~= nil then
+            if grimmory_id == nil then
+                grimmory_id = existing_grimmory_id
+            elseif existing_grimmory_id ~= grimmory_id then
                 local update_stmt = conn:prepare([[
                     UPDATE book
                     SET
@@ -202,17 +205,20 @@ function GrimmoryLocalRepository:upsertBook(book_path, grimmory_id)
                 update_stmt:close()
             end
 
-            return book_id
+            return {
+                id = book_id,
+                grimmory_id = grimmory_id,
+            }
         end,
         "rw"
     )
 
-    if not ok or not book_id then
-        logger:err("Failed to upsert book:", book_path, "-", book_id)
+    if not ok or not book then
+        logger:err("Failed to upsert book:", book_path, "-", book)
         return false, nil
     end
 
-    return true, book_id
+    return true, book.id, book.grimmory_id
 end
 
 ---@param book_path string
