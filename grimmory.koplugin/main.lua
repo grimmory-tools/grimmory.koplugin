@@ -517,7 +517,8 @@ function Grimmory:onGrimmorySync(verbose, book_path)
         -- event so the file manager knows it should refresh
         UIManager:broadcastEvent(Event:new("RefreshContent"))
 
-        -- Also refresh collections in this process
+        -- Also force refresh collections in this process
+        ReadCollection.last_read_time = 0
         ReadCollection:_read()
 
         if verbose then
