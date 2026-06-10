@@ -214,7 +214,7 @@ function GrimmoryMenu:getDownloadOptionsMenu()
             separator = true,
         },
         {
-            text = _("Remove Books when Remote Missing"),
+            text = _("Permanently Delete Removed Books"),
             checked_func = function()
                 return self.settings:getDownloadRemoveBooks()
             end,
