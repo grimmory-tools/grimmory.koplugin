@@ -650,39 +650,45 @@ function GrimmorySynchronize:pullBooks(callback)
     util.findFiles(
         download_directory,
         function(path)
-            if path:match("%.sdr/") then
-                -- Ignore sidecar directory
-                return
-            end
+            local ok, result = pcall(function()
+                if path:match("%.sdr/") then
+                    -- Ignore sidecar directory
+                    return
+                end
 
-            if seen_books[path] then
-                -- We saw this specific file and can skip
-                -- We don't need to do the database lookup
-                return
-            end
+                if seen_books[path] then
+                    -- We saw this specific file and can skip
+                    -- We don't need to do the database lookup
+                    return
+                end
 
-            local partial_md5 = util.partialMD5(path)
-            local found_ok, _, grimmory_id = self.repository:findBookByFile(path, partial_md5)
+                local partial_md5 = util.partialMD5(path)
+                local found_ok, _, grimmory_id = self.repository:findBookByFile(path, partial_md5)
 
-            if not found_ok or not grimmory_id then
-                -- Skip file, not tracked in database for some reason
-                logger:dbg("Skipping file removal, not in database:", path, partial_md5)
-                return
-            end
+                if not found_ok or not grimmory_id then
+                    -- Skip file, not tracked in database for some reason
+                    logger:dbg("Skipping file removal, not in database:", path, partial_md5)
+                    return
+                end
 
-            if seen_grimmory_ids[tostring(grimmory_id)] then
-                -- We saw this Grimmory ID as a valid book to keep on-device.
-                return
-            end
+                if seen_grimmory_ids[tostring(grimmory_id)] then
+                    -- We saw this Grimmory ID as a valid book to keep on-device.
+                    return
+                end
 
-            logger:dbg("Book removed from upstream:", path)
+                logger:dbg("Book removed from upstream:", path)
 
-            if self.settings:getDownloadRemoveBooks() then
-                self:removeBook(path)
-            else
-                -- Even if we don't remove the book we should remove it
-                -- from all Grimmory shelves.
-                self:associateWithShelves(path, {})
+                if self.settings:getDownloadRemoveBooks() then
+                    self:removeBook(path)
+                else
+                    -- Even if we don't remove the book we should remove it
+                    -- from all Grimmory shelves.
+                    self:associateWithShelves(path, {})
+                end
+            end)
+
+            if not ok then
+                logger:err("Failed during cleanup:", path, "-", result)
             end
         end,
         true
