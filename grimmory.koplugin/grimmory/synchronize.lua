@@ -95,8 +95,11 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
             callback({
                 state = "session-error",
                 bookPath = session.book_path,
-                since = session.end_time,
             })
+
+            -- If an error happens for this session we bail early so
+            -- retries can happen again later
+            break
         else
             logger:dbg(
                 "Recording session",
