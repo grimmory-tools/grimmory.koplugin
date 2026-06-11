@@ -335,7 +335,7 @@ function GrimmorySynchronize:synchronizeShelves(callback)
 end
 
 function GrimmorySynchronize:removeEmptyShelves(callback)
-    if self.settings:getSyncEmptyShelves() then
+    if self.settings:getSyncRetainEmptyShelves() then
         logger:info("Shelf clean up sync skipped because feature is disabled")
         return
     end
