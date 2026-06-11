@@ -215,7 +215,7 @@ function GrimmoryLocalRepository:upsertBook(book_path, grimmory_id)
 
     if not ok or not book then
         logger:err("Failed to upsert book:", book_path, "-", book)
-        return false, nil
+        return false, nil, nil
     end
 
     return true, book.id, book.grimmory_id

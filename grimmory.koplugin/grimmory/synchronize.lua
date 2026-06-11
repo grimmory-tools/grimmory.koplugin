@@ -520,7 +520,12 @@ end
 function GrimmorySynchronize:associateBook(book_path)
     for book in self.api:getBooks() do
         if self.doc_metadata:isBook(book_path, book) then
-            self.repository:upsertBook(book_path, book.id)
+            local ok = self.repository:upsertBook(book_path, book.id)
+
+            if not ok then
+                logger:err("Failed to write book association:", book_path)
+            end
+
             return true
         end
     end
