@@ -404,7 +404,10 @@ function GrimmorySynchronize:getBookDownloadPath(book)
     local existing_book_ok, existing_books = self.repository:findBooksByGrimmoryId(book.id)
     if existing_book_ok then
         for _, local_book in ipairs(existing_books) do
-            if util.fileExists(local_book.book_path) and util.partialMD5(local_book.book_path) == local_book.book_md5 then
+            if (
+                util.fileExists(local_book.book_path) and
+                util.partialMD5(local_book.book_path) == local_book.book_md5
+            ) then
                 return local_book.book_path
             end
         end
