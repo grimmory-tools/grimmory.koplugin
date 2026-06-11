@@ -18,6 +18,12 @@ local function getPluginPath()
     return path
 end
 
+---@class GrimmoryLocalBook
+---@field id integer
+---@field book_md5 string
+---@field book_path string
+---@field grimmory_id integer | nil
+
 ---@alias ReadingSessionEventType
 ---| "page"
 ---| "session-start"
@@ -258,13 +264,13 @@ end
 
 ---@param grimmory_id number
 ---@return boolean ok
----@return string | nil book_path
----@return string | nil book_md5
-function GrimmoryLocalRepository:findBookByGrimmoryId(grimmory_id)
-    local ok, book = self:withDatabase(
+---@return GrimmoryLocalBook[] books
+function GrimmoryLocalRepository:findBooksByGrimmoryId(grimmory_id)
+    local ok, books = self:withDatabase(
         function(conn)
             local select_stmt = conn:prepare([[
                 SELECT
+                    id,
                     book_path,
                     partial_md5
                 FROM book
@@ -273,31 +279,32 @@ function GrimmoryLocalRepository:findBookByGrimmoryId(grimmory_id)
             ]])
 
             select_stmt:bind(grimmory_id)
-            local row = select_stmt:step()
-            select_stmt:close()
 
-            if not row then
-                return error("Not Found")
+            local books = {}
+
+            for row in select_stmt:rows() do
+                table.insert(
+                    books,
+                    {
+                        id = tonumber(row[1]),
+                        book_path = row[2],
+                        book_md5 = row[3],
+                    }
+                )
             end
 
-            return {
-                book_path = row[1],
-                book_md5 = row[2],
-            }
+            select_stmt:close()
+
+            return books
         end
     )
 
     if not ok then
-        logger:err("Failed to find book:", grimmory_id, "-", book)
-        return false, nil, nil
+        logger:err("Failed to find book:", grimmory_id, "-", books)
+        return false, {}
     end
 
-    if not book then
-        logger:dbg("Book query succees but did not find book:", grimmory_id)
-        return true, nil, nil
-    end
-
-    return true, book.book_path, book.book_md5
+    return true, books
 end
 
 ---@param book_id number

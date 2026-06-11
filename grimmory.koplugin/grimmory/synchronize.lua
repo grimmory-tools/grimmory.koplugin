@@ -401,9 +401,13 @@ end
 ---@param book Book
 ---@return string download_path
 function GrimmorySynchronize:getBookDownloadPath(book)
-    local existing_book_ok, existing_book_path = self.repository:findBookByGrimmoryId(book.id)
-    if existing_book_ok and existing_book_path then
-        return existing_book_path
+    local existing_book_ok, existing_books = self.repository:findBooksByGrimmoryId(book.id)
+    if existing_book_ok then
+        for _, book in ipairs(existing_books) do
+            if util.fileExists(book.book_path) and util.partialMD5(book.book_path) == book.book_md5 then
+                return book.book_path
+            end
+        end
     end
 
     local download_directory = self.settings:getDownloadDirectory()
