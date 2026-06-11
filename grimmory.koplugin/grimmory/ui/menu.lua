@@ -188,10 +188,10 @@ function GrimmoryMenu:getSyncOptionsMenu()
                 return self.settings:getSyncShelves()
             end,
             checked_func = function()
-                return self.settings:getSyncShelves() and self.settings:getSyncEmptyShelves()
+                return self.settings:getSyncShelves() and self.settings:getSyncRetainEmptyShelves()
             end,
             callback = function()
-                self.settings:toggleSyncEmptyShelves()
+                self.settings:toggleSyncRetainEmptyShelves()
                 UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
             end,
         },
