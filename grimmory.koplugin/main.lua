@@ -392,7 +392,8 @@ function Grimmory:onGrimmorySync(verbose, book_path)
         local last_progress_step = 0
         local session_count = 0
         local session_error_count = 0
-        local book_count = 0
+        local book_download_count = 0
+        local book_refresh_count = 0
         local book_error_count = 0
 
         local update_progress_step = function(progress_step)
@@ -428,7 +429,7 @@ function Grimmory:onGrimmorySync(verbose, book_path)
                     return
                 end
 
-                if progress.state == "push-book-metadata" then
+                if progress.state == "book-push-metadata" then
                     local pushed_books = progress.pushed_books or 0
                     local total_books = progress.total_books or 0
 
@@ -447,7 +448,11 @@ function Grimmory:onGrimmorySync(verbose, book_path)
                     update_progress_step(3)
                 end
 
-                if progress.state == "book-downloaded" or progress.state == "book-error" then
+                if (
+                    progress.state == "book-downloaded" or
+                    progress.state == "book-error" or
+                    progress.state == "book-pull-metadata"
+                ) then
                     local viewed_books = progress.viewed_books or 0
                     local total_books = progress.total_books or 0
 
@@ -465,9 +470,9 @@ function Grimmory:onGrimmorySync(verbose, book_path)
                 elseif progress.state == "session-error" then
                     session_error_count = session_error_count + 1
                 elseif progress.state == "book-downloaded" then
-                    book_count = book_count + 1
+                    book_download_count = book_download_count + 1
 
-                    if book_count % 20 == 0 then
+                    if book_download_count % 20 == 0 then
                         -- If we're updating a lot of books we should
                         -- emit a refresh event every once in a while
                         -- so background refresh sees these come
@@ -480,6 +485,8 @@ function Grimmory:onGrimmorySync(verbose, book_path)
 
                 elseif progress.state == "book-error" then
                     book_error_count = book_error_count + 1
+                elseif progress.state == "book-pull-metadata" then
+                    book_refresh_count = book_refresh_count + 1
                 end
             end
         )
@@ -522,30 +529,31 @@ function Grimmory:onGrimmorySync(verbose, book_path)
         ReadCollection:_read()
 
         if verbose then
-            local message
-            if session_error_count > 0 or book_error_count > 0 then
-                message = T(
-                    _(
-                        "Completed Grimmory sync\n" ..
-                        "%1 session(s) recorded\n" ..
-                        "%2 session(s) failed\n" ..
-                        "%3 book(s) downloaded\n" ..
-                        "%4 book(s) failed"
-                    ),
-                    session_count,
-                    session_error_count,
-                    book_count,
-                    book_error_count
-                )
-            else
-                message = T(
-                    _("Completed Grimmory sync\n%1 session(s) recorded\n%2 book(s) downloaded"),
-                    session_count,
-                    book_count
-                )
+            local message = {
+                _("Completed Grimmory sync")
+            }
+
+            if session_count > 0 then
+                table.insert(message, T(_("%1 session(s) recorded"), session_count))
             end
 
-            self.dialog_manager:toast(message)
+            if session_error_count > 0 then
+                table.insert(message, T(_("%1 session(s) failed"), session_error_count))
+            end
+
+            if book_download_count > 0 then
+                table.insert(message, T(_("%1 book(s) downloaded"), book_download_count))
+            end
+
+            if book_refresh_count > 0 then
+                table.insert(message, T(_("%1 book(s) refreshed"), book_refresh_count))
+            end
+
+            if book_error_count > 0 then
+                table.insert(message, T(_("%1 book(s) failed"), book_error_count))
+            end
+
+            self.dialog_manager:toast(table.concat(message, "\n"))
         end
     end
 

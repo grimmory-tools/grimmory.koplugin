@@ -399,12 +399,6 @@ function GrimmorySynchronize:downloadBook(book_id, download_path)
         return false, message
     end
 
-    local progress_ok, progress_result = pcall(self.pullBookProgress, self, download_path)
-
-    if not progress_ok then
-        logger:warn("Could not pull progress for book:", book_id, "-", progress_result)
-    end
-
     return true, nil
 end
 
@@ -535,8 +529,10 @@ end
 
 ---@param book Book
 ---@return string download_path
+---@return boolean is_downloaded
 function GrimmorySynchronize:pullBook(book)
     local book_exists = false
+    local is_downloaded = false
 
     local download_path = self:getBookDownloadPath(book)
 
@@ -549,6 +545,8 @@ function GrimmorySynchronize:pullBook(book)
 
     if not book_exists then
         if download_path ~= nil then
+            is_downloaded = true
+
             logger:dbg("Downloading book", book.id, "to", download_path)
 
             local ok, message = self:downloadBook(book.id, download_path)
@@ -564,13 +562,15 @@ function GrimmorySynchronize:pullBook(book)
     end
 
     if book_exists and download_path then
-        -- After we're done, if the book exists we should attach it
-        -- to associated shelves.
-        self:associateWithShelves(download_path, book.shelves or {})
         self.repository:upsertBook(download_path, book.id)
+
+        -- After we're done, if the book exists we should attach it
+        -- to associated shelves and pull the book progress.
+        self:associateWithShelves(download_path, book.shelves or {})
+        self:pullBookProgress(download_path)
     end
 
-    return download_path
+    return download_path, is_downloaded
 end
 
 ---@param book_path string
@@ -619,17 +619,27 @@ function GrimmorySynchronize:pullBooks(callback)
         if self:isTargetBook(book) then
             seen_grimmory_ids[tostring(book.id)] = true
 
-            local pull_ok, pull_path_or_message = pcall(self.pullBook, self, book, callback)
+            local pull_ok, pull_path_or_message, is_downloaded = pcall(self.pullBook, self, book, callback)
             if pull_ok then
                 seen_books[pull_path_or_message] = true
 
-                callback({
-                    state = "book-downloaded",
-                    book_id = book.id,
-                    download_path = pull_path_or_message,
-                    viewed_books = element_count,
-                    total_books = total_books,
-                })
+                if is_downloaded then
+                    callback({
+                        state = "book-downloaded",
+                        book_id = book.id,
+                        book_path = pull_path_or_message,
+                        viewed_books = element_count,
+                        total_books = total_books,
+                    })
+                else
+                    callback({
+                        state = "book-pull-metadata",
+                        book_id = book.id,
+                        book_path = pull_path_or_message,
+                        viewed_books = element_count,
+                        total_books = total_books,
+                    })
+                end
             else
                 logger:err("Book failed to pull:", book.id, "-", pull_path_or_message)
                 callback({
@@ -751,18 +761,14 @@ function GrimmorySynchronize:synchronizeBook(book_path, callback)
     self:pushBookMetadata(book_id, callback)
 
     callback({
-        state = "push-book-metadata",
+        state = "book-push-metadata",
         book_id = book_id,
         pushed_books = 1,
         total_books = 1,
     })
 
     -- Then, try to get progress
-    local progress_ok, progress_result = pcall(self.pullBookProgress, self, book_path)
-
-    if not progress_ok then
-        logger:warn("Could not pull progress for book:", book_path, "-", progress_result)
-    end
+    self:pullBookProgress(book_path)
 
     logger:info("Done synchronizing book:", book_path)
 end
