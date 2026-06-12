@@ -351,7 +351,8 @@ end
 ---@param current_page number
 ---@param page_count number
 ---@param xpointer string | nil
-function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current_page, page_count, xpointer)
+---@param cfi string | nil
+function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current_page, page_count, xpointer, cfi)
     local ok, result = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
@@ -362,9 +363,10 @@ function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current
                         event_type,
                         current_page,
                         page_count,
-                        xpointer
+                        xpointer,
+                        cfi
                     )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ]])
 
             stmt:bind(
@@ -373,7 +375,8 @@ function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current
                 event_type,
                 current_page,
                 page_count,
-                xpointer
+                xpointer,
+                cfi
             )
 
             stmt:step()

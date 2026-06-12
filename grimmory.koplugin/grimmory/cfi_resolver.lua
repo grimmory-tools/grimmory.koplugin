@@ -1,5 +1,4 @@
 local Cache = require("cache")
-local DocumentRegistry = require("document/documentregistry")
 
 local GrimmoryLogger = require("grimmory/logger")
 
@@ -393,15 +392,15 @@ local function split_local_range_cfi_path(cfi)
 end
 
 ---@class GrimmoryCFIResolver
----@field document_path string
----@field document CREDocument
+---@field document string
 ---@field cache Cache
 local GrimmoryCFIResolver = {}
 
----@param document_path string
-function GrimmoryCFIResolver:new(document_path, cache)
+---@param document CREDocument
+---@param cache? Cache
+function GrimmoryCFIResolver:new(document, cache)
     local o = {
-        document_path = document_path,
+        document = document,
         cache = cache or Cache:new({ slots = 8 })
     }
     setmetatable(o, self)
@@ -424,36 +423,19 @@ function GrimmoryCFIResolver:getFragmentHTML(fragment_index)
         return html
     end
 
-    local document = (
-        DocumentRegistry:hasProvider(self.document_path) and
-        DocumentRegistry:openDocument(self.document_path)
-    )
+    -- There has to be a better way to get this..
 
-    if document then
-        local loaded = true
-        if document.loadDocument then
-            loaded = document:loadDocument(true)
+    local source
+    local fragment_html = self.document:getHTMLFromXPointer("/body/DocFragment[" .. tostring(fragment_index) .. "]")
+    for token in tokenize_html(fragment_html) do
+        if token.type == "tag" and token.text == "docfragment" then
+            source = token.raw:match("Source=\"([^\"]+)\"")
+            break
         end
+    end
 
-        if loaded then
-            -- There has to be a better way to get this..
-
-            local source
-            local fragment_html = document:getHTMLFromXPointer("/body/DocFragment[" .. tostring(fragment_index) .. "]")
-            for token in tokenize_html(fragment_html) do
-                if token.type == "tag" and token.text == "docfragment" then
-                    source = token.raw:match("Source=\"([^\"]+)\"")
-                    break
-                end
-            end
-
-            if source then
-                html = document:getDocumentFileContent(source)
-            end
-
-        end
-
-        document:close()
+    if source then
+        html = self.document:getDocumentFileContent(source)
     end
 
     self.cache:insert(fragment_index, html)
