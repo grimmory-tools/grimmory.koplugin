@@ -528,6 +528,16 @@ function Grimmory:onGrimmorySync(verbose, book_path)
         ReadCollection.last_read_time = 0
         ReadCollection:_read()
 
+        if self.ui and self.ui.document and self.ui.doc_settings then
+            local settings = self.doc_metadata:getDocSettings(self.ui.document.file)
+
+            -- Refresh live doc_settings
+            self.ui.doc_settings.data = settings.data
+
+            -- Reload document so any changes apply
+            self.ui:reloadDocument()
+        end
+
         if verbose then
             local message = {
                 _("Completed Grimmory sync")
