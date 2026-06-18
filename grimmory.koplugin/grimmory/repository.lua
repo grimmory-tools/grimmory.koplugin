@@ -225,6 +225,38 @@ function GrimmoryLocalRepository:upsertBook(book_path, grimmory_id)
     return true, book.id, book.grimmory_id
 end
 
+---@param book_id integer
+---@param partial_md5 string
+---@return boolean ok
+---@return string | nil message
+function GrimmoryLocalRepository:updateBook(book_id, partial_md5)
+    local ok, message = self:withDatabase(
+        function(conn)
+            local stmt = conn:prepare([[
+                UPDATE
+                    book
+                SET
+                    partial_md5 = ?
+                WHERE
+                    id = ?;
+            ]])
+
+            stmt:bind(partial_md5, book_id)
+
+            stmt:exec()
+            stmt:close()
+        end,
+        "rw"
+    )
+
+    if not ok then
+        logger:err("Failed to update book:", book_id, "-", message)
+        return ok, message
+    end
+
+    return ok, nil
+end
+
 ---@param book_path string
 ---@param partial_md5 string
 ---@return boolean ok

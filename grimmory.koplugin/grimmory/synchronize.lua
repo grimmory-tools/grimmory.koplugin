@@ -1,4 +1,5 @@
 local ReadCollection = require("readcollection")
+local md5 = require("ffi/MD5")
 local util = require("util")
 
 local GrimmoryLogger = require("grimmory/logger")
@@ -527,6 +528,85 @@ function GrimmorySynchronize:associateBook(book_path)
     return false
 end
 
+---@param book_path string
+---@param grimmory_id number
+function GrimmorySynchronize:refreshBook(book_path, book_id, grimmory_id)
+    local temp_path = book_path .. ".tmp"
+
+    -- Download book to temp path
+    local download_ok, download_message = self:downloadBook(grimmory_id, temp_path)
+    if not download_ok then
+        util.removeFile(temp_path)
+        return false, download_message
+    end
+
+    local temp_md5 = md5.sumFile(temp_path)
+    local book_md5 = md5.sumFile(book_path)
+
+    if temp_md5 == book_md5 then
+        -- Things were completely the same so we can delete the temp file
+        logger:info("File is identical with Grimmory:", book_path, "-", temp_md5)
+        util.removeFile(temp_path)
+        return true, book_id
+    end
+
+    local temp_partial_md5 = util.partialMD5(temp_path)
+    local book_partial_md5 = util.partialMD5(book_path)
+
+
+    local backup_path = book_path .. ".bak"
+
+    if util.fileExists(backup_path) then
+        logger:dbg("Cleaning up existing backup file")
+        util.removeFile(backup_path)
+    end
+
+    local finalize_ok, finalize_message = pcall(function()
+        local backup_ok, backup_message = os.rename(book_path, backup_path)
+
+        if not backup_ok then
+            error(backup_message)
+        end
+
+        local move_ok, move_message = os.rename(temp_path, book_path)
+
+        if not move_ok then
+            error(move_message)
+        end
+
+        if temp_partial_md5 == book_partial_md5 then
+            logger:dbg("Partial md5 is a match, no database changes needed")
+        else
+            logger:info("Partial MD5 is a mismatch so we need to rewrite database")
+            -- Update session data from old_book_id to new_book_id
+            local update_book_ok, update_book_message = self.repository:updateBook(book_id, temp_partial_md5)
+
+            if not update_book_ok then
+                error(update_book_message)
+            end
+        end
+    end)
+
+    if not finalize_ok then
+        if util.fileExists(backup_path) then
+            logger:dbg("Rolling back: Renaming", backup_path, "to", book_path)
+            os.rename(backup_path, book_path)
+        end
+
+        util.removeFile(backup_path)
+        util.removeFile(temp_path)
+
+        logger:err("Failed to replace files:", book_path, finalize_message)
+        return false, finalize_message
+    end
+
+    logger:dbg("Cleaning up files from rename")
+    util.removeFile(backup_path)
+    util.removeFile(temp_path)
+
+    return true, book_id
+end
+
 ---@param book Book
 ---@return string download_path
 ---@return boolean is_downloaded
@@ -745,7 +825,7 @@ function GrimmorySynchronize:synchronizeAll(callback)
     logger:info("Done synchronizing")
 end
 
-function GrimmorySynchronize:synchronizeBook(book_path, callback)
+function GrimmorySynchronize:synchronizeBook(book_path, refresh_book, callback)
     if not self:checkForHealthyServer() then
         error("Cannot connect to valid server")
     end
@@ -755,6 +835,19 @@ function GrimmorySynchronize:synchronizeBook(book_path, callback)
 
     if not book_ok or not book_id then
         error("Could not track book")
+    end
+
+    if refresh_book then
+        if not grimmory_id then
+            error("Book not associated to Grimmory")
+        end
+
+        local refresh_ok, refreshed_book_id = self:refreshBook(book_path, book_id, grimmory_id)
+
+        if not refresh_ok or not refreshed_book_id then
+            logger:err("Could not refresh book:", book_path, refreshed_book_id)
+            error("Could not refresh book")
+        end
     end
 
     if grimmory_id == nil then
