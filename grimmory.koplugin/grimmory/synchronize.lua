@@ -167,9 +167,9 @@ function GrimmorySynchronize:pushBookHighlights(book_id, callback)
 
     -- 1. Extração do .sdr e Identificação de Novos
     local settings = self.doc_metadata:getDocSettings(book_path)
-    local sdr_highlights = {} 
+    local sdr_highlights = {}
     local count = 0
-    
+
     if settings and settings.data then
         local highlights_list = settings.data.annotations or settings.data.bookmarks
         if highlights_list then
@@ -177,7 +177,7 @@ function GrimmorySynchronize:pushBookHighlights(book_id, callback)
                 if bm.pos0 and bm.text and bm.text ~= "" then
                     -- Guardar para comparação de exclusão
                     table.insert(sdr_highlights, {text=bm.text, note=bm.text_note or bm.notes or "", cfi=bm.pos0})
-                    
+
                     -- Inserir se for novo no SQLite
                     if not self.repository:highlightExists(book_id, bm.pos0, bm.text) then
                         self.repository:insertHighlight(book_id, bm.text, bm.text_note or bm.notes or "", bm.pos0)
@@ -206,10 +206,11 @@ function GrimmorySynchronize:pushBookHighlights(book_id, callback)
             for _, sdr_hl in ipairs(sdr_highlights) do
                 if db_hl.cfi == sdr_hl.cfi then found = true break end
             end
-            
+
             -- Se existe no banco mas sumiu do .sdr, o utilizador apagou no Kindle
             if not found then
-                local ok, _, _ = self.api:request("DELETE", "/api/v1/highlights?bookId="..grimmory_id.."&cfi="..db_hl.cfi)
+                local endpoint = "/api/v1/highlights?bookId=" .. grimmory_id .. "&cfi=" .. db_hl.cfi
+                local ok, _, _ = self.api:request("DELETE", endpoint)
                 if ok then
                     self.repository:deleteHighlight(db_hl.id)
                 end

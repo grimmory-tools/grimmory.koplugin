@@ -5,7 +5,6 @@ Grimmory KOReader Plugin
 --]]--
 local _ = require("gettext")
 local T = require("ffi/util").template
-local util = require("util")
 
 local Dispatcher = require("dispatcher")
 local FileManager = require("apps/filemanager/filemanager")
@@ -23,7 +22,6 @@ local GrimmorySettings = require("grimmory/settings")
 local GrimmoryAPI = require("grimmory/grimmory_api")
 local GrimmorySynchronize = require("grimmory/synchronize")
 local GrimmoryScheduler = require("grimmory/scheduler")
-local GrimmoryCFIResolver = require("grimmory/cfi_resolver")
 local GrimmorySelfUpdater = require("grimmory/ota/self_updater")
 local GithubAPI = require("grimmory/ota/github_api")
 local GrimmoryLogger = require("grimmory/logger")

@@ -421,7 +421,7 @@ function GrimmoryLocalRepository:deleteHighlight(id)
         stmt:step()
         stmt:close()
     end, "rw")
-    
+
     if not ok then
         logger:err("Error removing local SQLite highlighting: ", result)
     end
@@ -807,12 +807,12 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
     local ok, results = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
-                SELECT id, book_id, text, note, cfi, created_at 
-                FROM grimmory_highlights 
+                SELECT id, book_id, text, note, cfi, created_at
+                FROM grimmory_highlights
                 WHERE book_id = ? AND synced = 0
             ]])
             stmt:bind(book_id)
-            
+
             local rows = {}
             for row in stmt:rows() do
                 table.insert(rows, {
@@ -872,9 +872,9 @@ function GrimmoryLocalRepository:highlightExists(book_id, cfi, text)
 
     if not ok then
         logger:err("Failed to check if highlight exists")
-        return false 
+        return false
     end
-    
+
     return exists
 end
 

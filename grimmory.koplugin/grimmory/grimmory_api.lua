@@ -656,31 +656,31 @@ function GrimmoryAPI:getReadingProgress(username, auth_key, book_md5)
 end
 
 function GrimmoryAPI:pushHighlight(book_grimmory_id, text, note, cfi)
-    local payload = { 
-        bookId = book_grimmory_id, 
-        text = text, 
-        note = note or "", 
-        cfi = cfi 
+    local payload = {
+        bookId = book_grimmory_id,
+        text = text,
+        note = note or "",
+        cfi = cfi
     }
-    
+
     -- Transmissão direta e segura para a nova API v1
     local ok, _, response = self:request("POST", "/api/v1/highlights", payload)
-    
-    if not ok then 
-        logger:err("Failed to transmit highlight.", response) 
-        return false 
+
+    if not ok then
+        logger:err("Failed to transmit highlight.", response)
+        return false
     end
-    
+
     return true
 end
 
 function GrimmoryAPI:deleteHighlight(book_grimmory_id, cfi)
     local path = "/api/v1/highlights?bookId=" .. tostring(book_grimmory_id) .. "&cfi=" .. tostring(cfi)
-    
+
     local ok, _, response = self:request("DELETE", path)
-    if not ok then 
-        logger:err("Failed to delete highlight.", response) 
-        return false 
+    if not ok then
+        logger:err("Failed to delete highlight.", response)
+        return false
     end
     return true
 end
