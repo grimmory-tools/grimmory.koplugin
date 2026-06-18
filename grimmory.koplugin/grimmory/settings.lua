@@ -64,6 +64,7 @@ local DEFAULTS = {
     sync_reading_progress = true,
     sync_shelves_as_collections = true,
     sync_retain_empty_shelves = false,
+    sync_highlights = true,
     device_id = random.uuid(),
     device_name = Device.model,
 }
@@ -371,6 +372,18 @@ end
 
 function GrimmorySettings:toggleSyncEnableWifi()
     self.data.sync_enable_wifi = not self:getSyncEnableWifi()
+    self:write()
+end
+
+function GrimmorySettings:getSyncHighlights()
+    if self.data.sync_highlights == nil then
+        return DEFAULTS.sync_highlights
+    end
+    return self.data.sync_highlights
+end
+
+function GrimmorySettings:toggleSyncHighlights()
+    self.data.sync_highlights = not self:getSyncHighlights()
     self:write()
 end
 

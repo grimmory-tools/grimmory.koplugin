@@ -395,6 +395,38 @@ function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current
     end
 end
 
+--- Retorna todos os destaques deste livro para comparar com o .sdr
+---@param book_id number
+---@return table[]
+function GrimmoryLocalRepository:getExistingHighlights(book_id)
+    local ok, results = self:withDatabase(function(conn)
+        local stmt = conn:prepare("SELECT id, cfi FROM grimmory_highlights WHERE book_id = ?")
+        stmt:bind(book_id)
+        local rows = {}
+        for row in stmt:rows() do
+            table.insert(rows, {id = tonumber(row[1]), cfi = row[2]})
+        end
+        stmt:close()
+        return rows
+    end)
+    return ok and results or {}
+end
+
+--- Apaga o destaque do SQLite local após confirmação da API
+---@param id number
+function GrimmoryLocalRepository:deleteHighlight(id)
+    local ok, result = self:withDatabase(function(conn)
+        local stmt = conn:prepare("DELETE FROM grimmory_highlights WHERE id = ?")
+        stmt:bind(id)
+        stmt:step()
+        stmt:close()
+    end, "rw")
+    
+    if not ok then
+        logger:err("Error removing local SQLite highlighting: ", result)
+    end
+end
+
 ---@param book_id number
 ---@param cutoff number | nil
 ---@return boolean ok
@@ -494,7 +526,7 @@ function GrimmoryLocalRepository:getPendingSessionEvents(book_id)
                     e.cfi
                 FROM book AS b
                 LEFT JOIN book_sync_status AS bss
-                    ON bss.book_id = b.id AND bss.sync_type = "sessions"
+                    ON bss.book_id = b.id AND bss.sync_type = 'sessions'
                 JOIN book_session AS s ON s.book_id = b.id
                 JOIN book_event AS e ON e.session_id = s.id
                 WHERE
@@ -697,9 +729,9 @@ function GrimmoryLocalRepository:getBooksPendingSync(
                 JOIN book_session ON book.id = book_session.book_id
                 JOIN book_event ON book_session.id = book_event.session_id
                 LEFT JOIN book_sync_status AS sync_sessions
-                    ON book.id = sync_sessions.book_id AND sync_sessions.sync_type = "sessions"
+                    ON book.id = sync_sessions.book_id AND sync_sessions.sync_type = 'sessions'
                 LEFT JOIN book_sync_status AS sync_progress
-                    ON book.id = sync_progress.book_id AND sync_progress.sync_type = "progress"
+                    ON book.id = sync_progress.book_id AND sync_progress.sync_type = 'progress'
                 WHERE
                     grimmory_id IS NOT NULL
                     AND
@@ -745,5 +777,106 @@ function GrimmoryLocalRepository:getBooksPendingSync(
 
     return book_ids
 end
+
+---@param book_id number
+---@param text string
+---@param note string | nil
+---@param cfi string
+function GrimmoryLocalRepository:insertHighlight(book_id, text, note, cfi)
+    local ok, result = self:withDatabase(
+        function(conn)
+            local stmt = conn:prepare([[
+                INSERT INTO grimmory_highlights (book_id, text, note, cfi, created_at, synced)
+                VALUES (?, ?, ?, ?, ?, 0)
+            ]])
+            stmt:bind(book_id, text, note or "", cfi, os.time())
+            stmt:step()
+            stmt:close()
+        end,
+        "rw"
+    )
+
+    if not ok then
+        logger:err("Failed to insert highlight:", result)
+    end
+end
+
+---@param book_id number
+---@return table[]
+function GrimmoryLocalRepository:getPendingHighlights(book_id)
+    local ok, results = self:withDatabase(
+        function(conn)
+            local stmt = conn:prepare([[
+                SELECT id, book_id, text, note, cfi, created_at 
+                FROM grimmory_highlights 
+                WHERE book_id = ? AND synced = 0
+            ]])
+            stmt:bind(book_id)
+            
+            local rows = {}
+            for row in stmt:rows() do
+                table.insert(rows, {
+                    id = tonumber(row[1]),
+                    book_id = tonumber(row[2]),
+                    text = row[3],
+                    note = row[4],
+                    cfi = row[5],
+                    created_at = tonumber(row[6])
+                })
+            end
+            stmt:close()
+            return rows
+        end
+    )
+
+    if not ok then
+        logger:err("Failed to get pending highlights:", results)
+        return {}
+    end
+
+    return results
+end
+
+---@param id number
+function GrimmoryLocalRepository:markHighlightSynced(id)
+    local ok, result = self:withDatabase(
+        function(conn)
+            local stmt = conn:prepare("UPDATE grimmory_highlights SET synced = 1 WHERE id = ?")
+            stmt:bind(id)
+            stmt:step()
+            stmt:close()
+        end,
+        "rw"
+    )
+
+    if not ok then
+        logger:err("Failed to mark highlight synced:", result)
+    end
+end
+
+--- Verifica se um destaque já existe na base para evitar duplicação do .sdr
+---@param book_id number
+---@param cfi string
+---@param text string
+---@return boolean
+function GrimmoryLocalRepository:highlightExists(book_id, cfi, text)
+    local ok, exists = self:withDatabase(
+        function(conn)
+            local stmt = conn:prepare("SELECT id FROM grimmory_highlights WHERE book_id = ? AND cfi = ? AND text = ?")
+            stmt:bind(book_id, cfi, text)
+            local row = stmt:step()
+            stmt:close()
+            return row ~= nil
+        end
+    )
+
+    if not ok then
+        logger:err("Failed to check if highlight exists")
+        return false 
+    end
+    
+    return exists
+end
+
 
 return GrimmoryLocalRepository

@@ -148,11 +148,98 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
     end
 end
 
+
+---@param book_id integer
+---@param callback function
+function GrimmorySynchronize:pushBookHighlights(book_id, callback)
+    local book_path
+    self.repository:withDatabase(function(conn)
+        local stmt = conn:prepare("SELECT book_path FROM book WHERE id = ?")
+        stmt:bind(book_id)
+        local row = stmt:step()
+        if row then book_path = row[1] end
+        stmt:close()
+    end)
+
+    if not book_path then
+        return
+    end
+
+    -- 1. Extração do .sdr e Identificação de Novos
+    local settings = self.doc_metadata:getDocSettings(book_path)
+    local sdr_highlights = {} 
+    local count = 0
+    
+    if settings and settings.data then
+        local highlights_list = settings.data.annotations or settings.data.bookmarks
+        if highlights_list then
+            for _, bm in ipairs(highlights_list) do
+                if bm.pos0 and bm.text and bm.text ~= "" then
+                    -- Guardar para comparação de exclusão
+                    table.insert(sdr_highlights, {text=bm.text, note=bm.text_note or bm.notes or "", cfi=bm.pos0})
+                    
+                    -- Inserir se for novo no SQLite
+                    if not self.repository:highlightExists(book_id, bm.pos0, bm.text) then
+                        self.repository:insertHighlight(book_id, bm.text, bm.text_note or bm.notes or "", bm.pos0)
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+
+
+    -- 2. Lógica de Exclusão (Diff entre SQLite e SDR)
+    local grimmory_id = nil
+    self.repository:withDatabase(function(conn)
+        local stmt = conn:prepare("SELECT grimmory_id FROM book WHERE id = ?")
+        stmt:bind(book_id)
+        local row = stmt:step()
+        if row then grimmory_id = tonumber(row[1]) end
+        stmt:close()
+    end)
+
+    if grimmory_id then
+        local local_highlights = self.repository:getExistingHighlights(book_id)
+        for _, db_hl in ipairs(local_highlights) do
+            local found = false
+            for _, sdr_hl in ipairs(sdr_highlights) do
+                if db_hl.cfi == sdr_hl.cfi then found = true break end
+            end
+            
+            -- Se existe no banco mas sumiu do .sdr, o utilizador apagou no Kindle
+            if not found then
+                local ok, _, _ = self.api:request("DELETE", "/api/v1/highlights?bookId="..grimmory_id.."&cfi="..db_hl.cfi)
+                if ok then
+                    self.repository:deleteHighlight(db_hl.id)
+                end
+            end
+        end
+    end
+
+    -- 3. Transmissão para a API (Apenas os novos)
+    local pending_highlights = self.repository:getPendingHighlights(book_id)
+    if pending_highlights and #pending_highlights > 0 and grimmory_id then
+        for _, highlight in ipairs(pending_highlights) do
+            local ok = self.api:pushHighlight(grimmory_id, highlight.text, highlight.note, highlight.cfi)
+            if ok then
+                self.repository:markHighlightSynced(highlight.id)
+                if callback then
+                    callback({ state = "highlight-pushed", book_id = book_id, highlight_id = highlight.id })
+                end
+            else
+                logger:err("Failed to transmit highlight. Local ID:", highlight.id)
+            end
+        end
+    end
+end
+
 ---@param book_id integer
 ---@param callback function
 function GrimmorySynchronize:pushBookMetadata(book_id, callback)
     self:pushBookProgress(book_id, callback)
     self:pushBookSessions(book_id, callback)
+    self:pushBookHighlights(book_id, callback)
 end
 
 function GrimmorySynchronize:pushAllPendingBookMetadata(callback)

@@ -173,6 +173,17 @@ function GrimmoryMenu:getSyncOptionsMenu()
             separator = true,
         },
         {
+            text = _("Sync Highlights"),
+            checked_func = function()
+                return self.settings:getSyncHighlights()
+            end,
+            callback = function()
+                self.settings:toggleSyncHighlights()
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+            separator = true,
+        },
+        {
             text = _("Sync Shelves"),
             checked_func = function()
                 return self.settings:getSyncShelves()
