@@ -163,6 +163,19 @@ function Grimmory:init()
                         self:onGrimmorySync(true, file)
                     end,
                 },
+                {
+                    text = _("Reload from Grimmory"),
+                    callback = function()
+                        local file_chooser = FileManager.instance.file_chooser
+
+                        if file_chooser and file_chooser.file_dialog then
+                            UIManager:close(file_chooser.file_dialog)
+                        end
+
+                        -- Mark book for refresh
+                        self:onGrimmorySync(true, file, true)
+                    end
+                }
             }
         end
     )
@@ -357,7 +370,7 @@ function Grimmory:onGrimmorySyncOpenBook(verbose)
     return self:onGrimmorySync(verbose, book_path)
 end
 
-function Grimmory:onGrimmorySync(verbose, book_path)
+function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
     -- Tell everything to flush so we have data available for our sync
     UIManager:broadcastEvent(Event:new("FlushSettings"))
 
@@ -414,7 +427,7 @@ function Grimmory:onGrimmorySync(verbose, book_path)
         local ok, result = self.executor:run(
             function(progress_callback)
                 if book_path then
-                    self.synchronizer:synchronizeBook(book_path, progress_callback)
+                    self.synchronizer:synchronizeBook(book_path, refresh_book, progress_callback)
                 else
                     self.synchronizer:synchronizeAll(progress_callback)
                 end
