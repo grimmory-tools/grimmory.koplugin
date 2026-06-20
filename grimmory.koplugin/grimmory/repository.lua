@@ -839,13 +839,15 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
     local ok, results = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
-                SELECT id, book_id, text, note, cfi, color, created_at 
-                FROM grimmory_highlights 
+                SELECT id, book_id, text, note, cfi, color, created_at
+                FROM grimmory_highlights
                 WHERE book_id = ? AND synced = 0
             ]])
+
             stmt:bind(book_id)
-            
+
             local rows = {}
+
             for row in stmt:rows() do
                 table.insert(rows, {
                     id = tonumber(row[1]),
@@ -853,10 +855,14 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
                     text = row[3],
                     note = row[4],
                     cfi = row[5],
-                    color = row[6], -- Nova linha
+                    color = row[6],
                     created_at = tonumber(row[7])
                 })
             end
+
+            stmt:close()
+            return rows
+        end
     )
 
     if not ok then
