@@ -6,5 +6,6 @@ CREATE TABLE IF NOT EXISTS grimmory_highlights (
     cfi TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     synced INTEGER DEFAULT 0,
-    color TEXT
+    color TEXT,
+    chapter_title TEXT
 );

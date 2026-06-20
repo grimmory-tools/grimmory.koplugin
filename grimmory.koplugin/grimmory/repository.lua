@@ -814,14 +814,14 @@ end
 ---@param text string
 ---@param note string | nil
 ---@param cfi string
-function GrimmoryLocalRepository:insertHighlight(book_id, text, note, cfi, color)
+function GrimmoryLocalRepository:insertHighlight(book_id, text, note, cfi, color, chapter_title)
     local ok, result = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
-                INSERT INTO grimmory_highlights (book_id, text, note, cfi, color, created_at, synced)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
+                INSERT INTO grimmory_highlights (book_id, text, note, cfi, color, chapter_title, created_at, synced)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
             ]])
-            stmt:bind(book_id, text, note or "", cfi, color or "", os.time())
+            stmt:bind(book_id, text, note or "", cfi, color or "", chapter_title or "", os.time())
             stmt:step()
             stmt:close()
         end,
@@ -839,15 +839,13 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
     local ok, results = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
-                SELECT id, book_id, text, note, cfi, color, created_at
-                FROM grimmory_highlights
+                SELECT id, book_id, text, note, cfi, color, chapter_title, created_at 
+                FROM grimmory_highlights 
                 WHERE book_id = ? AND synced = 0
             ]])
-
             stmt:bind(book_id)
-
+            
             local rows = {}
-
             for row in stmt:rows() do
                 table.insert(rows, {
                     id = tonumber(row[1]),
@@ -856,7 +854,8 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
                     note = row[4],
                     cfi = row[5],
                     color = row[6],
-                    created_at = tonumber(row[7])
+                    chapterTitle = row[7], -- Nova chave
+                    created_at = tonumber(row[8])
                 })
             end
 
