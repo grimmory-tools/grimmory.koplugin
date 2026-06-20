@@ -1,1 +1,0 @@
-ALTER TABLE grimmory_highlights ADD COLUMN color TEXT;
