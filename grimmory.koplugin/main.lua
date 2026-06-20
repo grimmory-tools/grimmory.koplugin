@@ -11,13 +11,13 @@ local FileManager = require("apps/filemanager/filemanager")
 local UIManager = require("ui/uimanager")
 local Event = require("ui/event")
 local ReadCollection = require("readcollection")
+local NetworkManager = require("ui/network/manager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 
 local GrimmoryDocMetadata = require("grimmory/doc_metadata")
 local GrimmoryDialogManager = require("grimmory/ui/dialog_manager")
 local GrimmoryExecutor = require("grimmory/executor")
 local GrimmoryMenu = require("grimmory/ui/menu")
-local GrimmoryWifiManager = require("grimmory/wifi_manager")
 local GrimmorySettings = require("grimmory/settings")
 local GrimmoryAPI = require("grimmory/grimmory_api")
 local GrimmorySynchronize = require("grimmory/synchronize")
@@ -33,7 +33,6 @@ local GrimmoryReadingProgressManager = require("grimmory/reading/progress_manage
 local logger = GrimmoryLogger:new()
 
 ---@class Grimmory
----@field wifi_manager WifiManager
 ---@field dialog_manager DialogManager
 ---@field scheduler GrimmoryScheduler
 ---@field synchronizer GrimmorySynchronize
@@ -116,10 +115,6 @@ function Grimmory:init()
         api = self.api,
         updater = self.updater,
         reading_progress_manager = self.reading_progress_manager,
-    })
-
-    self.wifi_manager = GrimmoryWifiManager:new({
-        settings = self.settings
     })
 
     self.menu = GrimmoryMenu:new({
@@ -310,7 +305,8 @@ function Grimmory:pullProgressForOpenBook()
             function()
                 local _, _, latest_progress = self.reading_progress_manager:getNewerProgressForBook(book_path)
                 return latest_progress
-            end
+            end,
+            self.settings:getSyncEnableWifi()
         )
 
         if not ok or not latest_progress then
@@ -320,13 +316,7 @@ function Grimmory:pullProgressForOpenBook()
         self.dialog_manager:showApplyProgressConfirmation(latest_progress)
     end
 
-    self.executor:wrap(function()
-        if self.settings:getSyncEnableWifi() then
-            self.wifi_manager:withWifi(callback)
-        else
-            callback()
-        end
-    end)
+    self.executor:wrap(callback)
 end
 
 function Grimmory:isReadyToSync()
@@ -370,16 +360,24 @@ function Grimmory:onGrimmorySyncOpenBook(verbose)
     return self:onGrimmorySync(verbose, book_path)
 end
 
+function Grimmory:isConnected()
+    local ok, result = pcall(function()
+        return NetworkManager:isConnected()
+    end)
+
+    if not ok then
+        logger:err("Something went wrong checking wifi connectivity", result)
+        return true
+    end
+
+    return result
+end
+
 function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
     -- Tell everything to flush so we have data available for our sync
     UIManager:broadcastEvent(Event:new("FlushSettings"))
 
     local function sync_callback()
-        if not self.wifi_manager:isConnected() then
-            logger:err("Cannot sync without connectivity")
-            return
-        end
-
         if not self:isReadyToSync() then
             return
         end
@@ -426,6 +424,11 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
 
         local ok, result = self.executor:run(
             function(progress_callback)
+                if not self:isConnected() then
+                    logger:err("Cannot sync without Connectivity")
+                    error("Cannot sync without Connectivity")
+                end
+
                 if book_path then
                     self.synchronizer:synchronizeBook(book_path, refresh_book, progress_callback)
                 else
@@ -501,7 +504,8 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
                 elseif progress.state == "book-pull-metadata" then
                     book_refresh_count = book_refresh_count + 1
                 end
-            end
+            end,
+            self.settings:getSyncEnableWifi()
         )
 
         self.is_synchronizing = false
@@ -580,13 +584,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         end
     end
 
-    self.executor:wrap(function()
-        if self.settings:getSyncEnableWifi() then
-            self.wifi_manager:withWifi(sync_callback)
-        else
-            sync_callback()
-        end
-    end)
+    self.executor:wrap(sync_callback)
 end
 
 return Grimmory

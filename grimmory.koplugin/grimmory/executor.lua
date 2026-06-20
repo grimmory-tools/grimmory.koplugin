@@ -1,6 +1,8 @@
+local Device = require("device")
 local ffiutil = require("ffi/util")
 local ffi = require("ffi")
 local json = require("json")
+local NetworkManager = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 
 local GrimmoryLogger = require("grimmory/logger")
@@ -117,9 +119,10 @@ end
 
 ---@param runnable GrimmoryRunnable
 ---@param on_progress GrimmoryRunnableProgressCallback
+---@param with_wifi bool
 ---@return boolean ok
 ---@return any result
-function GrimmoryExecutor:run(runnable, on_progress)
+function GrimmoryExecutor:run(runnable, on_progress, with_wifi)
     local running_coroutine = coroutine.running()
 
     if not running_coroutine then
@@ -128,6 +131,45 @@ function GrimmoryExecutor:run(runnable, on_progress)
     end
 
     UIManager:preventStandby()
+
+    -- We want the executor to attempt to connect to wifi before it runs
+    -- anything, and if it turns this on we should disable it afterwards, too.
+    local wifi_needs_disable = false
+    if with_wifi then
+        logger:dbg("Execution requested WiFi")
+        if not NetworkManager:isWifiOn() or not NetworkManager:isConnected() then
+            -- If the wifi is not connected then we need to wait for a connection
+            -- and don't want to block while we do it.
+
+            logger:dbg("Connecting to WiFi")
+
+            if not Device:hasWifiToggle() then
+                -- Clean up standby before continuing.
+                UIManager:allowStandby()
+
+                logger:err("Requested with wifi but cannot enable")
+                return false, "Unable to turn on WiFi"
+            end
+
+            local original_on = NetworkManager.wifi_was_on
+            NetworkManager:turnOnWifiAndWaitForConnection(function()
+                -- restore original "was on" state to prevent wifi
+                -- being restored automatically after suspend
+                NetworkManager.wifi_was_on = original_on
+                logger:dbg("Wifi is active, continuing execution")
+                coroutine.resume(running_coroutine)
+
+                wifi_needs_disable = true
+            end)
+
+            logger:dbg("Waiting for WiFi to come up")
+
+            -- Give control back to UIManager
+            coroutine.yield()
+        else
+            logger:dbg("WiFi is already Active")
+        end
+    end
 
     local subprocess_pid, parent_read_fd = ffiutil.runInSubProcess(
         function(my_pid, child_write_fd)
@@ -169,6 +211,8 @@ function GrimmoryExecutor:run(runnable, on_progress)
     local subprocess_result = nil
 
     if subprocess_pid then
+        logger:dbg("Subprocess started:", subprocess_pid)
+
         table.insert(self.running_subprocesses, subprocess_pid)
 
         local terminate = function()
@@ -225,6 +269,13 @@ function GrimmoryExecutor:run(runnable, on_progress)
                 break
             end
         end
+    else
+        logger:dbg("Failed to start subprocess", parent_read_fd)
+    end
+
+    -- If wifi was enabled, disable it again
+    if wifi_needs_disable then
+        NetworkManager:turnOffWifi()
     end
 
     UIManager:allowStandby()
