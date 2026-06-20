@@ -814,14 +814,14 @@ end
 ---@param text string
 ---@param note string | nil
 ---@param cfi string
-function GrimmoryLocalRepository:insertHighlight(book_id, text, note, cfi)
+function GrimmoryLocalRepository:insertHighlight(book_id, text, note, cfi, color)
     local ok, result = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
-                INSERT INTO grimmory_highlights (book_id, text, note, cfi, created_at, synced)
-                VALUES (?, ?, ?, ?, ?, 0)
+                INSERT INTO grimmory_highlights (book_id, text, note, cfi, color, created_at, synced)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
             ]])
-            stmt:bind(book_id, text, note or "", cfi, os.time())
+            stmt:bind(book_id, text, note or "", cfi, color or "", os.time())
             stmt:step()
             stmt:close()
         end,
@@ -839,12 +839,12 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
     local ok, results = self:withDatabase(
         function(conn)
             local stmt = conn:prepare([[
-                SELECT id, book_id, text, note, cfi, created_at
-                FROM grimmory_highlights
+                SELECT id, book_id, text, note, cfi, color, created_at 
+                FROM grimmory_highlights 
                 WHERE book_id = ? AND synced = 0
             ]])
             stmt:bind(book_id)
-
+            
             local rows = {}
             for row in stmt:rows() do
                 table.insert(rows, {
@@ -853,12 +853,10 @@ function GrimmoryLocalRepository:getPendingHighlights(book_id)
                     text = row[3],
                     note = row[4],
                     cfi = row[5],
-                    created_at = tonumber(row[6])
+                    color = row[6], -- Nova linha
+                    created_at = tonumber(row[7])
                 })
             end
-            stmt:close()
-            return rows
-        end
     )
 
     if not ok then

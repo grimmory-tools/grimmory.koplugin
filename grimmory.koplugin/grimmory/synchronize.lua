@@ -176,12 +176,14 @@ function GrimmorySynchronize:pushBookHighlights(book_id, callback)
         if highlights_list then
             for _, bm in ipairs(highlights_list) do
                 if bm.pos0 and bm.text and bm.text ~= "" then
-                    -- Guardar para comparação de exclusão
+                    local highlight_color = bm.color or bm.drawer or ""
+                    
+                    -- Guardar para comparação
                     table.insert(sdr_highlights, {text=bm.text, note=bm.text_note or bm.notes or "", cfi=bm.pos0})
-
-                    -- Inserir se for novo no SQLite
+                    
                     if not self.repository:highlightExists(book_id, bm.pos0, bm.text) then
-                        self.repository:insertHighlight(book_id, bm.text, bm.text_note or bm.notes or "", bm.pos0)
+                        logger:info("DEBUG GRIMMORY: Novo destaque extraído. Cor: ", highlight_color)
+                        self.repository:insertHighlight(book_id, bm.text, bm.text_note or bm.notes or "", bm.pos0, highlight_color)
                         count = count + 1
                     end
                 end
@@ -223,7 +225,7 @@ function GrimmorySynchronize:pushBookHighlights(book_id, callback)
     local pending_highlights = self.repository:getPendingHighlights(book_id)
     if pending_highlights and #pending_highlights > 0 and grimmory_id then
         for _, highlight in ipairs(pending_highlights) do
-            local ok = self.api:pushHighlight(grimmory_id, highlight.text, highlight.note, highlight.cfi)
+            local ok = self.api:pushHighlight(grimmory_id, highlight.text, highlight.note, highlight.cfi, highlight.color)
             if ok then
                 self.repository:markHighlightSynced(highlight.id)
                 if callback then

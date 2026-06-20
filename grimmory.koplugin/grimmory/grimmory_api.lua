@@ -655,12 +655,13 @@ function GrimmoryAPI:getReadingProgress(username, auth_key, book_md5)
 
 end
 
-function GrimmoryAPI:pushHighlight(book_grimmory_id, text, note, cfi)
+function GrimmoryAPI:pushHighlight(book_id, text, note, cfi, color)
     local payload = {
-        bookId = book_grimmory_id,
+        bookId = book_id,
         text = text,
-        note = note or "",
-        cfi = cfi
+        note = note,
+        cfi = cfi,
+        color = color
     }
 
     -- Transmissão direta e segura para a nova API v1
