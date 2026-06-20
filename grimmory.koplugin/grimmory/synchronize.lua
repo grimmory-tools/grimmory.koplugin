@@ -191,12 +191,13 @@ function GrimmorySynchronize:pushBookHighlights(book_id, callback)
                 if bm.pos0 and bm.text and bm.text ~= "" then
                     local hex_color = resolveColorHex(bm.color or bm.drawer)
                     local chapter = bm.chapter or ""
-                    
-                    table.insert(sdr_highlights, {text=bm.text, note=bm.text_note or bm.notes or "", cfi=bm.pos0})
-                    
+                    local user_note = bm.note or ""
+
+                    table.insert(sdr_highlights, {text=bm.text, note=user_note, cfi=bm.pos0})
+
                     if not self.repository:highlightExists(book_id, bm.pos0, bm.text) then
-                        logger:info("DEBUG GRIMMORY: Destaque com Cor Hex:", hex_color, "Capítulo:", chapter)
-                        self.repository:insertHighlight(book_id, bm.text, bm.text_note or bm.notes or "", bm.pos0, hex_color, chapter)
+                        logger:info("DEBUG GRIMMORY: Color:", hex_color, "Cap:", chapter, "Note:", user_note)
+                        self.repository:insertHighlight(book_id, bm.text, user_note, bm.pos0, hex_color, chapter)
                         count = count + 1
                     end
                 end
