@@ -46,7 +46,6 @@ function WifiManager:withWifi(callback)
     -- being restored automatically after suspend
     NetworkManager.wifi_was_on = original_on
     self.connection_pending = false
-    
     if calling_coroutine and coroutine.status(calling_coroutine) == "suspended" then
       -- resume back into the original coroutine so `callback`
       -- (and anything it calls, like GrimmoryExecutor:run)
