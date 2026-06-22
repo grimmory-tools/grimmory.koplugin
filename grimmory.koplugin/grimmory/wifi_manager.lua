@@ -41,7 +41,7 @@ function WifiManager:withWifi(callback)
   local original_on = NetworkManager.wifi_was_on
   local calling_coroutine = coroutine.running()
 
-  NetworkManager:runWhenConnected(function()
+  NetworkManager:turnOnWifiAndWaitForConnection(function()
     -- restore original "was on" state to prevent wifi
     -- being restored automatically after suspend
     NetworkManager.wifi_was_on = original_on
