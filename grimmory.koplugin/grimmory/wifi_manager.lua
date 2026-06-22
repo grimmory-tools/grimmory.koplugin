@@ -55,13 +55,14 @@ function WifiManager:withWifi(callback)
       if not ok then
           logger:err("Error resuming coroutine after wifi connect:", err)
       end
+    end
   end)
 
   local resumed_callback = coroutine.yield()
   if resumed_callback then
       resumed_callback(false)
   end
-  
+
   NetworkManager:turnOffWifi()
 end
 
