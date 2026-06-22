@@ -33,7 +33,10 @@ function WifiManager:withWifi(callback)
     return
   end
 
-  if not Device:hasWifiRestore() then
+  logger:err(Device:hasWifiToggle())
+  logger:err(Device:hasWifiRestore())
+
+  if not Device:hasWifiToggle() then
     logger:err("Requested with wifi but cannot enable")
     return
   end
