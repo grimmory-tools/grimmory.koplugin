@@ -94,7 +94,6 @@ function GrimmoryExecutor:clear()
     end
 end
 
-
 local function wrap_coroutine(func)
     -- Catch and log any error happening in func (an error happening
     -- in a coroutine just aborts silently the coroutine)
