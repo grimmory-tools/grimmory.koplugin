@@ -172,7 +172,7 @@ local function enable_wifi(timeout)
         logger:err("Failed to turn on wifi: Unknown")
         return false
     end
-    
+
     local wifi_needs_disable = true
 
     -- "EBUSY" (16) means we are either waiting for connectivity
@@ -181,7 +181,7 @@ local function enable_wifi(timeout)
         logger:err("Failed to turn on wifi: EBUSY")
         return false
     end
-    
+
     -- If we somehow blocked we will never resume - so don't even try
     if connectivity_result == nil then
         -- Give control back to UIManager
