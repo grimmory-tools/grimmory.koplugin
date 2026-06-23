@@ -116,7 +116,11 @@ local function wrap_coroutine(func)
 end
 
 ---@return bool enabled_wifi
-local function enable_wifi()
+local function enable_wifi(timeout)
+    if timeout == nil then
+        timeout = 45
+    end
+
     if NetworkManager:isWifiOn() and NetworkManager:isConnected() then
         logger:dbg("WiFi is already Active")
         return false
@@ -137,7 +141,7 @@ local function enable_wifi()
             iteration = 0
         end
 
-        if abort then
+        if iteration > timeout * 4 then
             logger:dbg("Aborted connection check waiting")
             connectivity_result = false
             coroutine.resume(running_coroutine)
