@@ -161,26 +161,37 @@ local function enable_wifi(timeout)
     -- for a connection and don't want to block while we do it.
     logger:dbg("Connecting to WiFi")
 
-    local result = NetworkManager:requestToTurnOnWifi(function()
-        logger:dbg("Wifi is active, waiting for connecitivty")
-        UIManager:scheduleIn(0.25, check_connectivity, 0)
-    end)
+    local wifi_needs_disable = false
 
-    -- Explicit `false` means something went wrong trying
-    -- to turn on wifi - so we shouldn't try to turn it off again.
-    if result == false then
-        logger:err("Failed to turn on wifi: Unknown")
-        return false
+    if not NetworkManager:isWifiOn() then
+        wifi_needs_disable = true
+
+        local result = NetworkManager:requestToTurnOnWifi(
+            function()
+                logger:dbg("Wifi is active, waiting for connecitivty")
+            end
+        )
+
+        -- Explicit `false` means something went wrong trying
+        -- to turn on wifi - so we shouldn't try to turn it off again.
+        if result == false then
+            logger:err("Failed to turn on wifi: Unknown")
+
+            -- Clean up the connection the same as `NetworkManager:enableWifi` would
+            pcall(NetworkManager, NetworkManager._abortWifiConnection, NetworkManager)
+            return false
+        end
+
+        -- "EBUSY" (16) means we are either waiting for connectivity
+        -- or just tried to disable?
+        if result == 16 then
+            logger:err("Failed to turn on wifi: EBUSY")
+            return false
+        end
     end
 
-    local wifi_needs_disable = true
-
-    -- "EBUSY" (16) means we are either waiting for connectivity
-    -- or just tried to disable?
-    if result == 16 then
-        logger:err("Failed to turn on wifi: EBUSY")
-        return false
-    end
+    -- Start connectivity checking
+    UIManager:scheduleIn(0.25, check_connectivity, 0)
 
     -- If we somehow blocked we will never resume - so don't even try
     if connectivity_result == nil then
@@ -190,7 +201,7 @@ local function enable_wifi(timeout)
     end
 
     logger:dbg("Continuing after wifi")
-    return connectivity_result and wifi_needs_disable
+    return wifi_needs_disable
 end
 
 ---@alias GrimmoryRunnableProgressCallback function(state: any, terminate: function): bool
