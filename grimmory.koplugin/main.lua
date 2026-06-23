@@ -387,8 +387,9 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         local terminated_early = false
 
         local queue_terminate = function()
-            terminate()
+            logger:dbg("Terminate requested")
             terminated_early = true
+            terminate()
         end
 
         self.is_synchronizing = true

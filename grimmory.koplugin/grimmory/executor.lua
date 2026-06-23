@@ -1,6 +1,7 @@
 local ffiutil = require("ffi/util")
 local ffi = require("ffi")
 local json = require("json")
+local Device = require("device")
 local NetworkManager = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 
@@ -128,15 +129,18 @@ local function enable_wifi()
     end
 
     local running_coroutine = coroutine.running()
+    local connectivity_result = nil
 
-    local check_connectivity = function(iteration)
+    local check_connectivity
+    check_connectivity = function(iteration)
         if iteration == nil then
             iteration = 0
         end
 
         if abort then
             logger:dbg("Aborted connection check waiting")
-            coroutine.resume(running_coroutine, false)
+            connectivity_result = false
+            coroutine.resume(running_coroutine)
             return
         end
 
@@ -144,7 +148,8 @@ local function enable_wifi()
             UIManager:scheduleIn(0.25, check_connectivity, iteration + 1)
         else
             logger:dbg("Connection succesful")
-            coroutine.resume(running_coroutine, true)
+            connectivity_result = true
+            coroutine.resume(running_coroutine)
         end
     end
 
@@ -154,30 +159,34 @@ local function enable_wifi()
 
     local result = NetworkManager:requestToTurnOnWifi(function()
         logger:dbg("Wifi is active, waiting for connecitivty")
-
-        check_connectivity(0)
+        UIManager:scheduleIn(0.25, check_connectivity, 0)
     end)
 
     -- Explicit `false` means something went wrong trying
     -- to turn on wifi - so we shouldn't try to turn it off again.
     if result == false then
-        logger:dbg("Failed to turn on wifi")
+        logger:err("Failed to turn on wifi: Unknown")
         return false
     end
     
     local wifi_needs_disable = true
 
-    -- "EBUSY" (16) means we are already waiting for connectivity
+    -- "EBUSY" (16) means we are either waiting for connectivity
+    -- or just tried to disable?
     if result == 16 then
-        logger:dbg("Network already requested, waiting for connecitvity")
-        wifi_needs_disable = false
-        check_connectivity(0)
+        logger:err("Failed to turn on wifi: EBUSY")
+        return false
+    end
+    
+    -- If we somehow blocked we will never resume - so don't even try
+    if connectivity_result == nil then
+        -- Give control back to UIManager
+        logger:dbg("Waiting...")
+        coroutine.yield()
     end
 
-    -- Give control back to UIManager
-    local success = coroutine.yield()
-
-    return success and wifi_needs_disable
+    logger:dbg("Continuing after wifi")
+    return connectivity_result and wifi_needs_disable
 end
 
 ---@alias GrimmoryRunnableProgressCallback function(state: any, terminate: function): bool
@@ -202,8 +211,6 @@ function GrimmoryExecutor:background(callback, with_wifi)
         end
 
         local function run_in_background(runnable, on_progress)
-            local running_coroutine = coroutine.running()
-
             UIManager:preventStandby()
 
             -- We want the executor to attempt to connect to wifi before it runs
@@ -211,12 +218,15 @@ function GrimmoryExecutor:background(callback, with_wifi)
             local wifi_needs_disable = false
             if with_wifi then
                 logger:dbg("Execution requested WiFi")
-                _, wifi_needs_disable = pcall(enable_wifi)
+                wifi_needs_disable = enable_wifi()
             end
 
             if was_terminated then
+                UIManager:allowStandby()
                 return false, "Termianted before starting subprocess"
             end
+
+            local running_coroutine = coroutine.running()
 
             local new_subprocess_pid, parent_read_fd = ffiutil.runInSubProcess(
                 function(my_pid, child_write_fd)
@@ -258,6 +268,7 @@ function GrimmoryExecutor:background(callback, with_wifi)
 
             if was_terminated then
                 ffiutil.terminateSubProcess(subprocess_pid)
+                UIManager:allowStandby()
                 return false, "Terminated before starting subprocess"
             end
 
@@ -323,6 +334,7 @@ function GrimmoryExecutor:background(callback, with_wifi)
 
             -- If wifi was enabled, disable it again
             if wifi_needs_disable then
+                logger:dbg("Disabling WiFi after execution")
                 NetworkManager:turnOffWifi()
             end
 
