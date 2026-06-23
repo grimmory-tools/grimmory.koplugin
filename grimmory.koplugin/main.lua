@@ -305,28 +305,22 @@ function Grimmory:pullProgressForOpenBook()
 
     local book_path = self.ui.document.file
 
-    local callback = function()
-        local ok, latest_progress = self.executor:run(
-            function()
-                local _, _, latest_progress = self.reading_progress_manager:getNewerProgressForBook(book_path)
-                return latest_progress
+    self.executor:background(
+        function(run)
+            local ok, latest_progress = run(
+                function()
+                    local _, _, latest_progress = self.reading_progress_manager:getNewerProgressForBook(book_path)
+                    return latest_progress
+                end
+            )
+
+            if not ok or not latest_progress then
+                return
             end
-        )
 
-        if not ok or not latest_progress then
-            return
+            self.dialog_manager:showApplyProgressConfirmation(latest_progress)
         end
-
-        self.dialog_manager:showApplyProgressConfirmation(latest_progress)
-    end
-
-    self.executor:wrap(function()
-        if self.settings:getSyncEnableWifi() then
-            self.wifi_manager:withWifi(callback)
-        else
-            callback()
-        end
-    end)
+    )
 end
 
 function Grimmory:isReadyToSync()
@@ -374,7 +368,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
     -- Tell everything to flush so we have data available for our sync
     UIManager:broadcastEvent(Event:new("FlushSettings"))
 
-    local function sync_callback()
+    local function background_callback(run, terminate)
         if not self.wifi_manager:isConnected() then
             logger:err("Cannot sync without connectivity")
             return
@@ -386,9 +380,12 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
 
         logger:info("Synchronizing to Grimmory")
 
-        local should_terminate = false
         local terminated_early = false
-        local queue_terminate = function() should_terminate = true end
+
+        local queue_terminate = function()
+            terminate()
+            terminated_early = true
+        end
 
         self.is_synchronizing = true
         self.menu:onGrimmorySyncStart(queue_terminate)
@@ -424,7 +421,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         -- In the future, we should limit what we sync
         -- to current or recent books.  For now, we sync everything.
 
-        local ok, result = self.executor:run(
+        local ok, result = run(
             function(progress_callback)
                 if book_path then
                     self.synchronizer:synchronizeBook(book_path, refresh_book, progress_callback)
@@ -432,12 +429,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
                     self.synchronizer:synchronizeAll(progress_callback)
                 end
             end,
-            function(progress, terminate)
-                if should_terminate then
-                    terminated_early = true
-                    terminate()
-                end
-
+            function(progress)
                 if type(progress) ~= "table" then
                     return
                 end
@@ -513,7 +505,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
 
         if not ok then
             if terminated_early then
-                logger:info("Sync was interrupted by user", result)
+                logger:info("Sync was interrupted by user")
 
                 if verbose then
                     self.dialog_manager:toast(
@@ -580,13 +572,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         end
     end
 
-    self.executor:wrap(function()
-        if self.settings:getSyncEnableWifi() then
-            self.wifi_manager:withWifi(sync_callback)
-        else
-            sync_callback()
-        end
-    end)
+    self.executor:background(background_callback)
 end
 
 return Grimmory
