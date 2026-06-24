@@ -110,11 +110,21 @@ local function tokenize_html(html, token_limit)
                 local found_tag = html:sub(start, stop)
                 local found_end_tag, found_tag_name = found_tag:match("^<(/?)([^/%s>]+)")
 
+                local is_void = false
+
+                if HTML_VOID_ELEMENT_TAGS[found_tag_name] then
+                    is_void = true
+                end
+
+                if found_tag:sub(#found_tag-1) == "/>" then
+                    is_void = true
+                end
+
                 if found_tag_name then
                     if found_end_tag == "/" then
-                        return {type="end-tag", text=found_tag_name:lower(), raw=found_tag}
+                        return {type="end-tag", text=found_tag_name:lower(), is_void=is_void, raw=found_tag}
                     else
-                        return {type="tag", text=found_tag_name:lower(), raw=found_tag}
+                        return {type="tag", text=found_tag_name:lower(), is_void=is_void, raw=found_tag}
                     end
                 end
             end
@@ -136,9 +146,9 @@ local function walk_tree(tokens, callback)
             return true
         end
 
-        if token.type == "tag" and not HTML_VOID_ELEMENT_TAGS[token.text] then
+        if token.type == "tag" and not token.is_void then
             depth = depth + 1
-        elseif token.type == "end-tag" and not HTML_VOID_ELEMENT_TAGS[token.text] then
+        elseif token.type == "end-tag" and not token.is_void then
             depth = depth - 1
         end
 
@@ -228,6 +238,7 @@ end
 ---@return boolean ok
 ---@return string type
 ---@return string text
+---@return bool is_void
 ---@return integer type_counter
 local function get_child(tokens, child_index)
     local node_counter = 0
@@ -262,7 +273,7 @@ local function get_child(tokens, child_index)
     end)
 
     if not ok or target_token == nil then
-        return false, "", "", 0
+        return false, "", "", false, 0
     end
 
     local match_counter = 0
@@ -273,7 +284,7 @@ local function get_child(tokens, child_index)
         match_counter = match_counters[target_token.text]
     end
 
-    return true, target_token.type, target_token.text, match_counter
+    return true, target_token.type, target_token.text, target_token.is_void, match_counter
 end
 
 local function format_cfi(fragment_index, local_path)
@@ -417,15 +428,24 @@ local function cfi_local_path_to_fragment_path(fragment_html, cfi_local_path)
         end
     end
 
+    local last_token_was_void = false
     local fragment_path_parts = {}
     local target_text = nil
 
     for part in cfi_local_path:gmatch("([^/]+)") do
+        if last_token_was_void then
+            error("impossible CFI for document: attempting to get children of void")
+        end
+
         local part_node_index = tonumber(part:match("^(%d+)"))
         -- For each CFI part
         -- Iterate through children in HTML for local path
 
-        local ok, token_type, text, match_index = get_child(tokens, part_node_index)
+        local ok, token_type, text, token_is_void, match_index = get_child(tokens, part_node_index)
+
+        if token_is_void then
+            last_token_was_void = true
+        end
 
         if not ok then
             error("could not translate from local path to xpointer")
@@ -497,7 +517,7 @@ local function fragment_path_to_cfi_local_path(fragment_html, fragment_path)
         local found_ok, tag_counter = count_children(tokens, part.tag_index, part.tag_name)
 
         if not found_ok then
-            error("Something has gone wrong")
+            error("Unable to find XPointer in document")
         end
 
         table.insert(cfi_steps, tag_counter)

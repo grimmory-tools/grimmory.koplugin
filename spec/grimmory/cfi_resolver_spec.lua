@@ -71,6 +71,31 @@ describe("GrimmoryCFIResolver", function()
     end)
 
     describe("cfiToXpointer", function()
+        it("handles self-ending tag", function()
+            fake_document.getDocumentFileContent = spy.new(function() return [[CDATA
+            <html>
+                <head>
+                </head>
+                <body>
+                    <h1>Chapter 2</h1>
+                    <span self="ending" tag />
+                    <p>Content of chapter <code>two</code>.</p>
+                </body>
+            </html>
+            ]] end)
+
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/6)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/p",
+                actual
+            )
+        end)
+
         it("converts simple xpointer", function()
             local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
 
