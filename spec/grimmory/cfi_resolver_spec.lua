@@ -96,6 +96,29 @@ describe("GrimmoryCFIResolver", function()
             )
         end)
 
+        it("prevents entering self-ending tag", function()
+            fake_document.getDocumentFileContent = spy.new(function() return [[CDATA
+            <html>
+                <head>
+                </head>
+                <body>
+                    <h1>Chapter 2</h1>
+                    <span self="ending" tag />
+                    <p>Content of chapter <code>two</code>.</p>
+                </body>
+            </html>
+            ]] end)
+
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            assert.are.has_error(
+                function()
+                    cfi_resolver:cfiToXpointer("epubcfi(/6/24!/4/4/2)")
+                end,
+                "impossible CFI for document: attempting to get children of void"
+            )
+        end)
+
         it("converts simple xpointer", function()
             local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
 
