@@ -110,21 +110,23 @@ local function tokenize_html(html, token_limit)
                 local found_tag = html:sub(start, stop)
                 local found_end_tag, found_tag_name = found_tag:match("^<(/?)([^/%s>]+)")
 
-                local is_void = false
-
-                if HTML_VOID_ELEMENT_TAGS[found_tag_name] then
-                    is_void = true
-                end
-
-                if found_tag:sub(#found_tag-1) == "/>" then
-                    is_void = true
-                end
-
                 if found_tag_name then
+                    found_tag_name = found_tag_name:lower()
+
+                    local is_void = false
+
+                    if HTML_VOID_ELEMENT_TAGS[found_tag_name] then
+                        is_void = true
+                    end
+
+                    if found_tag:match("/>%s*") then
+                        is_void = true
+                    end
+
                     if found_end_tag == "/" then
-                        return {type="end-tag", text=found_tag_name:lower(), is_void=is_void, raw=found_tag}
+                        return {type="end-tag", text=found_tag_name, is_void=is_void, raw=found_tag}
                     else
-                        return {type="tag", text=found_tag_name:lower(), is_void=is_void, raw=found_tag}
+                        return {type="tag", text=found_tag_name, is_void=is_void, raw=found_tag}
                     end
                 end
             end
