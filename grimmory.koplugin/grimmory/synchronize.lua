@@ -31,25 +31,40 @@ function GrimmorySynchronize:pushBookProgress(book_id, callback)
 
     local progress_ok, progress = self.repository:getReadingProgress(book_id)
 
-    if progress_ok and progress ~= nil then
-        logger:info("Synchronizing reading progress for:", book_id)
-        local ok = self.reading_progress_manager:pushRemoteProgress(progress)
+    if not progress_ok or progress == nil then
+        logger:dbg("No local reading progress for book:", book_id)
+        return
+    end
 
-        if ok then
-            callback({
-                state = "progress-pushed",
-                book_path = progress.book_path,
-                book_md5 = progress.book_md5,
-            })
+    local sync_status_ok, last_synced_at = self.repository:getBookSyncTimestamp(book_id, "progress")
 
-            self.repository:updateBookSyncTimestamp(book_id, "progress", progress.end_time)
-        else
-            callback({
-                state = "progress-failed",
-                book_path = progress.book_path,
-                book_md5 = progress.book_md5,
-            })
-        end
+    if not sync_status_ok then
+        logger:err("Unable to get sync status for book, not blindly syncing:", book_id)
+        return
+    end
+
+    if last_synced_at ~= nil and last_synced_at >= progress.end_time then
+        logger:dbg("Book progress already synced, skipping:", book_id, "-", last_synced_at)
+        return
+    end
+
+    logger:info("Synchronizing reading progress for:", book_id, ";", last_synced_at, "->", progress.end_time)
+    local ok = self.reading_progress_manager:pushRemoteProgress(progress)
+
+    if ok then
+        callback({
+            state = "progress-pushed",
+            book_path = progress.book_path,
+            book_md5 = progress.book_md5,
+        })
+
+        self.repository:updateBookSyncTimestamp(book_id, "progress", progress.end_time)
+    else
+        callback({
+            state = "progress-failed",
+            book_path = progress.book_path,
+            book_md5 = progress.book_md5,
+        })
     end
 end
 
@@ -80,6 +95,7 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
                 bookPath = session.book_path,
                 since = session.end_time,
             })
+
         elseif total_pages < threshold_pages then
             logger:info("Skipped session below page threshold for book", book_id)
             callback({
@@ -87,6 +103,7 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
                 bookPath = session.book_path,
                 since = session.end_time,
             })
+
         elseif session.grimmory_id == nil then
             logger:err("Session failed recording with error for book: ", book_id, " - ", "No Grimmory ID")
             callback({

@@ -710,7 +710,43 @@ function GrimmoryLocalRepository:updateBookSyncTimestamp(book_id, sync_type, tim
     end
 
     return true
+end
 
+---@param book_id number
+---@param sync_type RepositorySyncType
+---@return boolean ok
+---@return integer timestamp
+function GrimmoryLocalRepository:getBookSyncTimestamp(book_id, sync_type)
+    local ok, timestamp = self:withDatabase(
+        function(conn)
+            local stmt = conn:prepare([[
+                SELECT
+                    last_synced_at
+                FROM book_sync_status
+                WHERE
+                    book_id = ?
+                    AND
+                    sync_type = ?
+            ]])
+
+            stmt:bind(book_id, sync_type)
+            local row = stmt:step()
+            stmt:close()
+
+            if row == nil then
+                return 0
+            end
+
+            return tonumber(row[1]) or 0
+        end
+    )
+
+    if not ok then
+        logger:err("Failed to get book sync status:", book_id, "-", timestamp)
+        return false, nil
+    end
+
+    return true, timestamp
 end
 
 ---@param with_sessions boolean
