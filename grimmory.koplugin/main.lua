@@ -251,6 +251,20 @@ function Grimmory:onCloseDocument()
     end
 end
 
+function Grimmory:onAnnotationsModified(annotation_info)
+    logger:dbg("Annotations modified", annotation_info)
+
+    -- annotation is at annotation_info[1]
+
+    if annotation_info.index_modified == nil then
+        self.reading_recorder:onAnnotationUpdated()
+    elseif annotation_info.index_modified < 0 then
+        self.reading_recorder:onAnnotationRemoved()
+    else
+        self.reading_recorder:onAnnotationAdded()
+    end
+end
+
 function Grimmory:onGrimmorySettingsChanged()
     logger:dbg("Settings Changed")
 

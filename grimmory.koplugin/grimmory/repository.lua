@@ -28,6 +28,9 @@ end
 ---| "page"
 ---| "session-start"
 ---| "session-end"
+---| "annotation-added"
+---| "annotation-removed"
+---| "annotation-updated"
 
 ---@class ReadingSession
 ---@field grimmory_id number | nil
