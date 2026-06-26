@@ -6,6 +6,14 @@ local util = require("util")
 local GrimmoryLogger = require("grimmory/logger")
 local logger = GrimmoryLogger:new()
 
+local function is_path_open(ui, path)
+    if ui.document == nil or ui.document.file == nil then
+        return false
+    end
+
+    return ui.document.file == path
+end
+
 ---@class GrimmoryDocMetadata
 ---@field private props_cache any
 ---@field private ui any
@@ -231,7 +239,10 @@ function DocMetadata:setProgress(path, percent, xpointer, page)
     end
 
     settings:flush()
-    self:refreshUI()
+
+    if is_path_open(self.ui, path) then
+        self:refreshUI()
+    end
 end
 
 return DocMetadata
