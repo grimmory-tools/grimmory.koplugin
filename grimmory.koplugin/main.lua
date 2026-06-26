@@ -85,7 +85,9 @@ function Grimmory:init()
         settings = self.settings,
     })
 
-    self.doc_metadata = GrimmoryDocMetadata:new()
+    self.doc_metadata = GrimmoryDocMetadata:new({
+        ui = self.ui,
+    })
 
     self.reading_recorder = GrimmoryReadingRecorder:new({
         repository = self.repository,
@@ -557,15 +559,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         ReadCollection.last_read_time = 0
         ReadCollection:_read()
 
-        if self.ui and self.ui.document and self.ui.doc_settings then
-            local settings = self.doc_metadata:getDocSettings(self.ui.document.file)
-
-            -- Refresh live doc_settings
-            self.ui.doc_settings.data = settings.data
-
-            -- Reload document so any changes apply
-            self.ui:reloadDocument()
-        end
+        self.doc_metadata:refreshUI()
 
         if verbose then
             local message = {
