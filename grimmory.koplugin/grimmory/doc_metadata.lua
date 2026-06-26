@@ -231,6 +231,7 @@ function DocMetadata:setProgress(path, percent, xpointer, page)
     end
 
     settings:flush()
+    self:refreshUI()
 end
 
 return DocMetadata
