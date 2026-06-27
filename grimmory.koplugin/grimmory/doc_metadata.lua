@@ -8,10 +8,11 @@ local logger = GrimmoryLogger:new()
 
 ---@class GrimmoryDocMetadata
 ---@field private props_cache any
+---@field private ui any
 local DocMetadata = {}
 
-function DocMetadata:new()
-    local o = {}
+function DocMetadata:new(o)
+    o = o or {}
     setmetatable(o, self)
     self.__index = self
     o:init()
@@ -30,10 +31,20 @@ function DocMetadata:purge(path)
     end
 end
 
-function DocMetadata:getDocSettings(path)
-    local settings = DocSettings:open(path)
+function DocMetadata:getDocSettings(path, fresh)
+    if self.ui and self.ui.document ~= nil and self.ui.document.file ~= nil then
+        if self.ui.document.file == path and self.ui.doc_settings then
+            if fresh then
+                local settings = DocSettings:open(path)
 
-    return settings
+                self.ui.doc_settings.data = settings.data
+            end
+
+            return self.ui.doc_settings
+        end
+    end
+
+    return DocSettings:open(path)
 end
 
 function DocMetadata:getDocProps(path)

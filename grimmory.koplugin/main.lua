@@ -8,6 +8,7 @@ local T = require("ffi/util").template
 
 local Dispatcher = require("dispatcher")
 local FileManager = require("apps/filemanager/filemanager")
+local NetworkManager = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local Event = require("ui/event")
 local ReadCollection = require("readcollection")
@@ -17,7 +18,6 @@ local GrimmoryDocMetadata = require("grimmory/doc_metadata")
 local GrimmoryDialogManager = require("grimmory/ui/dialog_manager")
 local GrimmoryExecutor = require("grimmory/executor")
 local GrimmoryMenu = require("grimmory/ui/menu")
-local GrimmoryWifiManager = require("grimmory/wifi_manager")
 local GrimmorySettings = require("grimmory/settings")
 local GrimmoryAPI = require("grimmory/grimmory_api")
 local GrimmorySynchronize = require("grimmory/synchronize")
@@ -33,7 +33,6 @@ local GrimmoryReadingProgressManager = require("grimmory/reading/progress_manage
 local logger = GrimmoryLogger:new()
 
 ---@class Grimmory
----@field wifi_manager WifiManager
 ---@field dialog_manager DialogManager
 ---@field scheduler GrimmoryScheduler
 ---@field synchronizer GrimmorySynchronize
@@ -86,7 +85,9 @@ function Grimmory:init()
         settings = self.settings,
     })
 
-    self.doc_metadata = GrimmoryDocMetadata:new()
+    self.doc_metadata = GrimmoryDocMetadata:new({
+        ui = self.ui,
+    })
 
     self.reading_recorder = GrimmoryReadingRecorder:new({
         repository = self.repository,
@@ -116,10 +117,6 @@ function Grimmory:init()
         api = self.api,
         updater = self.updater,
         reading_progress_manager = self.reading_progress_manager,
-    })
-
-    self.wifi_manager = GrimmoryWifiManager:new({
-        settings = self.settings
     })
 
     self.menu = GrimmoryMenu:new({
@@ -256,6 +253,20 @@ function Grimmory:onCloseDocument()
     end
 end
 
+function Grimmory:onAnnotationsModified(annotation_info)
+    logger:dbg("Annotations modified", annotation_info)
+
+    -- annotation is at annotation_info[1]
+
+    if annotation_info.index_modified == nil then
+        self.reading_recorder:onAnnotationUpdated()
+    elseif annotation_info.index_modified < 0 then
+        self.reading_recorder:onAnnotationRemoved()
+    else
+        self.reading_recorder:onAnnotationAdded()
+    end
+end
+
 function Grimmory:onGrimmorySettingsChanged()
     logger:dbg("Settings Changed")
 
@@ -305,28 +316,26 @@ function Grimmory:pullProgressForOpenBook()
 
     local book_path = self.ui.document.file
 
-    local callback = function()
-        local ok, latest_progress = self.executor:run(
-            function()
-                local _, _, latest_progress = self.reading_progress_manager:getNewerProgressForBook(book_path)
-                return latest_progress
+    -- Tell everything to flush so we have data available for our sync
+    UIManager:broadcastEvent(Event:new("FlushSettings"))
+
+    self.executor:background(
+        function(run)
+            local ok, latest_progress = run(
+                function()
+                    local _, _, latest_progress = self.reading_progress_manager:getNewerProgressForBook(book_path)
+                    return latest_progress
+                end
+            )
+
+            if not ok or not latest_progress then
+                return
             end
-        )
 
-        if not ok or not latest_progress then
-            return
-        end
-
-        self.dialog_manager:showApplyProgressConfirmation(latest_progress)
-    end
-
-    self.executor:wrap(function()
-        if self.settings:getSyncEnableWifi() then
-            self.wifi_manager:withWifi(callback)
-        else
-            callback()
-        end
-    end)
+            self.dialog_manager:showApplyProgressConfirmation(latest_progress)
+        end,
+        self.settings:getSyncEnableWifi()
+    )
 end
 
 function Grimmory:isReadyToSync()
@@ -341,6 +350,19 @@ function Grimmory:isReadyToSync()
     end
 
     return true
+end
+
+function Grimmory:isWifiConnected()
+    local ok, result = pcall(function()
+        return NetworkManager:isConnected()
+    end)
+
+    if not ok then
+        logger:err("Something went wrong checking wifi connectivity", result)
+        return true
+    end
+
+    return result
 end
 
 function Grimmory:onGrimmorySyncForegound()
@@ -370,25 +392,46 @@ function Grimmory:onGrimmorySyncOpenBook(verbose)
     return self:onGrimmorySync(verbose, book_path)
 end
 
+function Grimmory:refreshUI()
+   if self.ui == nil then
+        return
+    end
+
+    if self.ui.document == nil or self.ui.document.file == nil then
+        logger:dbg("No file is open, cannot refresh")
+        return
+    end
+
+    local settings = self.doc_metadata:getDocSettings(self.ui.document.file, true)
+
+    if self.ui.annotation then
+        -- Refresh annotations for any open document
+        self.ui.annotation.annotations = settings:readSetting("annotations")
+        pcall(self.ui.annotation.updateAnnotations, self.ui.annotation, true, true)
+    end
+
+    -- Reload document so any changes apply
+    self.ui:reloadDocument()
+end
+
 function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
     -- Tell everything to flush so we have data available for our sync
     UIManager:broadcastEvent(Event:new("FlushSettings"))
 
-    local function sync_callback()
-        if not self.wifi_manager:isConnected() then
-            logger:err("Cannot sync without connectivity")
-            return
-        end
-
+    local function background_callback(run, terminate)
         if not self:isReadyToSync() then
             return
         end
 
         logger:info("Synchronizing to Grimmory")
 
-        local should_terminate = false
         local terminated_early = false
-        local queue_terminate = function() should_terminate = true end
+
+        local queue_terminate = function()
+            logger:dbg("Terminate requested")
+            terminated_early = true
+            terminate()
+        end
 
         self.is_synchronizing = true
         self.menu:onGrimmorySyncStart(queue_terminate)
@@ -424,20 +467,20 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         -- In the future, we should limit what we sync
         -- to current or recent books.  For now, we sync everything.
 
-        local ok, result = self.executor:run(
+        local ok, result = run(
             function(progress_callback)
+                if not self:isWifiConnected() then
+                    logger:err("Cannot sync without connectivity")
+                    error("Cannot sync without connectivity")
+                end
+
                 if book_path then
                     self.synchronizer:synchronizeBook(book_path, refresh_book, progress_callback)
                 else
                     self.synchronizer:synchronizeAll(progress_callback)
                 end
             end,
-            function(progress, terminate)
-                if should_terminate then
-                    terminated_early = true
-                    terminate()
-                end
-
+            function(progress)
                 if type(progress) ~= "table" then
                     return
                 end
@@ -513,7 +556,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
 
         if not ok then
             if terminated_early then
-                logger:info("Sync was interrupted by user", result)
+                logger:info("Sync was interrupted by user")
 
                 if verbose then
                     self.dialog_manager:toast(
@@ -541,15 +584,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         ReadCollection.last_read_time = 0
         ReadCollection:_read()
 
-        if self.ui and self.ui.document and self.ui.doc_settings then
-            local settings = self.doc_metadata:getDocSettings(self.ui.document.file)
-
-            -- Refresh live doc_settings
-            self.ui.doc_settings.data = settings.data
-
-            -- Reload document so any changes apply
-            self.ui:reloadDocument()
-        end
+        self:refreshUI()
 
         if verbose then
             local message = {
@@ -580,13 +615,10 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         end
     end
 
-    self.executor:wrap(function()
-        if self.settings:getSyncEnableWifi() then
-            self.wifi_manager:withWifi(sync_callback)
-        else
-            sync_callback()
-        end
-    end)
+    self.executor:background(
+        background_callback,
+        self.settings:getSyncEnableWifi()
+    )
 end
 
 return Grimmory

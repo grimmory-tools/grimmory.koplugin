@@ -150,6 +150,18 @@ function ReadingRecorder:onSessionStart()
     self:emitSessionEvent(self.session_id, "session-start")
 end
 
+function ReadingRecorder:onAnnotationAdded()
+    self:emitSessionEvent(self.session_id, "annotation-added")
+end
+
+function ReadingRecorder:onAnnotationRemoved()
+    self:emitSessionEvent(self.session_id, "annotation-removed")
+end
+
+function ReadingRecorder:onAnnotationUpdated()
+    self:emitSessionEvent(self.session_id, "annotation-updated")
+end
+
 function ReadingRecorder:onPageUpdate()
     -- If the session is active and the book path has changed we
     -- somehow missed the end session event

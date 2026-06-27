@@ -71,6 +71,54 @@ describe("GrimmoryCFIResolver", function()
     end)
 
     describe("cfiToXpointer", function()
+        it("handles self-ending tag", function()
+            fake_document.getDocumentFileContent = spy.new(function() return [[CDATA
+            <html>
+                <head>
+                </head>
+                <body>
+                    <h1>Chapter 2</h1>
+                    <span self="ending" tag />
+                    <p>Content of chapter <code>two</code>.</p>
+                </body>
+            </html>
+            ]] end)
+
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/6)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/p",
+                actual
+            )
+        end)
+
+        it("prevents entering self-ending tag", function()
+            fake_document.getDocumentFileContent = spy.new(function() return [[CDATA
+            <html>
+                <head>
+                </head>
+                <body>
+                    <h1>Chapter 2</h1>
+                    <span self="ending" tag />
+                    <p>Content of chapter <code>two</code>.</p>
+                </body>
+            </html>
+            ]] end)
+
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            assert.are.has_error(
+                function()
+                    cfi_resolver:cfiToXpointer("epubcfi(/6/24!/4/4/2)")
+                end,
+                "impossible CFI for document: attempting to get children of void"
+            )
+        end)
+
         it("converts simple xpointer", function()
             local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
 
@@ -201,6 +249,19 @@ describe("GrimmoryCFIResolver", function()
                 "epubcfi(/6/24!/4/2/6/3:3)",
                 actual
             )
+        end)
+    end)
+
+    describe("cfiRangeToXPointers", function()
+        it("handles start and end within text blocks", function()
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual_start, actual_end = cfi_resolver:cfiRangeToXPointers(
+                "epubcfi(/6/24!/4/2/6,/3:3,/3:5)"
+            )
+
+            assert.are.equal("/body/DocFragment[12]/body/div/p[2]/text()[2].3", actual_start)
+            assert.are.equal("/body/DocFragment[12]/body/div/p[2]/text()[2].5", actual_end)
         end)
     end)
 
