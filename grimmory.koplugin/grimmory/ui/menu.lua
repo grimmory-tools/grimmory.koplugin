@@ -1,6 +1,7 @@
 local _ = require("gettext")
 local T = require("ffi/util").template
 
+local Device = require("device")
 local Event = require("ui/event")
 local ConfirmBox = require("ui/widget/confirmbox")
 local UIManager = require("ui/uimanager")
@@ -131,6 +132,7 @@ function GrimmoryMenu:getAutomaticSyncOptionsMenu()
         },
         {
             text = _("Enable WiFi"),
+            enabled = Device:hasWifiToggle(),
             checked_func = function()
                 return self.settings:getSyncEnableWifi()
             end,
