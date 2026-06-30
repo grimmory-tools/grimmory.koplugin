@@ -46,6 +46,11 @@ local function tokenize_html(html, token_limit)
 
     local pos = 0
 
+    -- Flag to ensure text always is generated between nodes
+    -- for proper counters.  The DOM must be tag -> text -> tag -> text,
+    -- always or the counts get incorrect.
+    local has_seen_text = false
+
     return function ()
         while html ~= nil and pos < #html do
             token_limit = token_limit - 1
@@ -66,10 +71,11 @@ local function tokenize_html(html, token_limit)
                 }
             end
 
-            if start ~= pos then
+            if not has_seen_text or start ~= pos then
                 local text = html:sub(pos, start - 1)
 
                 pos = start
+                has_seen_text = true
 
                 return {
                     type = "text",
@@ -106,6 +112,8 @@ local function tokenize_html(html, token_limit)
                 pos = stop + 1
             else
                 pos = stop + 1
+
+                has_seen_text = false
 
                 local found_tag = html:sub(start, stop)
                 local found_end_tag, found_tag_name = found_tag:match("^<(/?)([^/%s>]+)")

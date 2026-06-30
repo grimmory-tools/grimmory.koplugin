@@ -52,6 +52,10 @@ local EXAMPLE_HTML = [[CDATA
                 with
                 <bold>more</bold> text.
             </p>
+            <p class="foo"><span class="foo">
+                <img />
+                </span>Third <span>paragraph with</span> <bold>lots</bold> of <span>inline</span> elements.
+            </p>
         </div>
     </body>
 </html>
@@ -183,6 +187,19 @@ describe("GrimmoryCFIResolver", function()
                 actual
             )
         end)
+
+        it("converts to xpointer referencing a target with no spaces between nodes", function()
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/8/4/1:1)"
+            )
+
+            assert.are.equal(
+            "/body/DocFragment[12]/body/div/p[3]/span[2]/text().1",
+                actual
+            )
+        end)
     end)
 
     describe("xpointerToCFI", function()
@@ -247,6 +264,19 @@ describe("GrimmoryCFIResolver", function()
 
             assert.are.equal(
                 "epubcfi(/6/24!/4/2/6/3:3)",
+                actual
+            )
+        end)
+
+        it("converts xpointer referencing a target with no spaces between nodes", function()
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual = cfi_resolver:xpointerToCFI(
+                "/body/DocFragment[12]/body/div/p[3]/span[2]/text().1"
+            )
+
+            assert.are.equal(
+                "epubcfi(/6/24!/4/2/8/4/1:1)",
                 actual
             )
         end)
