@@ -369,7 +369,7 @@ function Grimmory:isReadyToSync()
     return true
 end
 
-function Grimmory:isConnected()
+function Grimmory:isWifiConnected()
     local ok, result = pcall(function()
         return NetworkManager:isConnected()
     end)
@@ -442,7 +442,7 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
 
         -- Run in the foreground, as something with background tasks and
         -- network management causes Android devices to SIGABRT.
-        if not self:isConnected() then
+        if not self:isWifiConnected() then
             logger:err("Cannot sync without connectivity")
             return
         end
