@@ -472,7 +472,7 @@ function GrimmoryAPI:getBooks()
             -- If current_index is past the current batch
             local new_books_ok, new_books_batch, new_total_books = self:getBooksPage(page + 1)
 
-            if not new_books_ok or type(new_books_batch) ~= "table" then
+            if not new_books_ok then
                 logger:err("Unable to read books:", new_books_batch)
                 error("Unable to read books")
             end
@@ -481,6 +481,11 @@ function GrimmoryAPI:getBooks()
             batch_index = 0
             books_batch = new_books_batch
             total_books = new_total_books
+
+            if type(books_batch) ~= "table" or #books_batch == 0 then
+                -- Done iterating
+                return nil, book_index, total_books
+            end
         end
 
         batch_index = batch_index + 1
