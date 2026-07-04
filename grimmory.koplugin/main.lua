@@ -444,6 +444,9 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         -- network management causes Android devices to SIGABRT.
         if not self:isWifiConnected() then
             logger:err("Cannot sync without connectivity")
+            self.dialog_manager:toast(
+                _("Failed to Synchronize with Grimmory: No Connectivity")
+            )
             return
         end
 
