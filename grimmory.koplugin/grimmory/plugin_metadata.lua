@@ -1,30 +1,57 @@
-local _meta = require("_meta")
+local DataStorage = require("datastorage")
 
 ---@class GrimmoryPluginMetadata
-local PluginMetadata = {}
+local PluginMetadata = {
+    meta = nil,
+}
 
+function PluginMetadata.getPluginPath()
+    local source = debug.getinfo(1, "S").source
+    local path = source:match("@(.*%.koplugin)/")
+    if not path then
+        path = DataStorage:getDataDir() .. "/plugins/grimmory.koplugin"
+    end
+
+    return path
+end
+
+function PluginMetadata.getMeta()
+    if PluginMetadata.meta == nil then
+        local plugin_path = PluginMetadata.getPluginPath()
+        local meta_path = plugin_path .. "/_meta.lua"
+        PluginMetadata.meta = dofile(meta_path)
+    end
+
+    return PluginMetadata.meta or {}
+end
 
 ---@return boolean has_repository
 function PluginMetadata.hasRepository()
-    return type(_meta.repository) == "string"
+    local meta = PluginMetadata.getMeta()
+
+    return type(meta.repository) == "string"
 end
 
 ---@return string version
 function PluginMetadata.getVersion()
-    if type(_meta.version) ~= "string" then
+    local meta = PluginMetadata.getMeta()
+
+    if type(meta.version) ~= "string" then
         return "0.0.0-snapshot"
     end
 
-    return _meta.version
+    return meta.version
 end
 
 ---@return string repository
 function PluginMetadata.getRepository()
-    if type(_meta.repository) ~= "string" then
+    local meta = PluginMetadata.getMeta()
+
+    if type(meta.repository) ~= "string" then
         return "unknown repository"
     end
 
-    return _meta.repository
+    return meta.repository
 end
 
 return PluginMetadata

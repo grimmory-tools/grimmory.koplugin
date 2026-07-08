@@ -42,16 +42,6 @@ local function verifyDigest(path, digest)
     return true
 end
 
-local function getPluginPath()
-    local source = debug.getinfo(1, "S").source
-    local path = source:match("@(.*)/")
-    if not path or not path:match("%.koplugin$") then
-        path = DataStorage:getDataDir() .. "/plugins/grimmory.koplugin"
-    end
-
-    return path
-end
-
 local function findPluginInArchive(reader)
     for entry in reader:iterate() do
         if entry.mode == "file" then
@@ -126,7 +116,7 @@ end
 ---@field latest_known_version string | nil
 ---@field is_pending_restart boolean
 local GrimmorySelfUpdater = {
-    plugin_path = getPluginPath(),
+    plugin_path = PluginMetadata.getPluginPath(),
     release_asset_name = "%a+.koplugin.zip",
     release_cache_path = DataStorage:getDataDir() .. "/cache/grimmory"
 }
