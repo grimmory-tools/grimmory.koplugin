@@ -423,7 +423,7 @@ end
 function GrimmoryAPI:getBooksPage(page_number)
     local ok, _, body = self:request(
         "GET",
-        "/api/v1/books/page?sort=addedOn,asc&page=" .. tostring(page_number or 0)
+        "/api/v1/books/page?sort=addedOn&page=" .. tostring(page_number or 0)
     )
 
     if not ok or type(body) == "string" then
