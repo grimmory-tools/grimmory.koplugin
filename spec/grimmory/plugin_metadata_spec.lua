@@ -1,5 +1,19 @@
 package.path = "grimmory.koplugin/?.lua;" .. package.path
 
+local fake_logger = {
+    err = spy.new(function() end),
+    info = spy.new(function() end),
+    dbg = spy.new(function() end),
+}
+
+package.preload["grimmory/logger"] = function()
+    return {
+        new = function()
+            return fake_logger
+        end
+    }
+end
+
 package.preload["gettext"] = function()
     return function(text)
         return text

@@ -1,5 +1,9 @@
 local DataStorage = require("datastorage")
 
+local GrimmoryLogger = require("grimmory/logger")
+
+local logger = GrimmoryLogger:new()
+
 ---@class GrimmoryPluginMetadata
 local PluginMetadata = {
     meta = nil,
@@ -19,7 +23,15 @@ function PluginMetadata.getMeta()
     if PluginMetadata.meta == nil then
         local plugin_path = PluginMetadata.getPluginPath()
         local meta_path = plugin_path .. "/_meta.lua"
-        PluginMetadata.meta = dofile(meta_path)
+
+        local load_ok, meta = pcall(dofile, meta_path)
+
+        if load_ok and type(meta) == "table" then
+            PluginMetadata.meta = meta
+        else
+            logger:err("Failed to load meta:", meta or "Unknown error")
+            PluginMetadata.meta = false
+        end
     end
 
     return PluginMetadata.meta or {}
