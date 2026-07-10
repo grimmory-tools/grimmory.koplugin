@@ -71,8 +71,6 @@ end
 ---@field end_progress number
 ---@field start_xpointer string | nil
 ---@field end_xpointer string | nil
----@field start_cfi string | nil
----@field end_cfi string | nil
 
 ---@class ReadingSessionEvent
 ---@field session_id number
@@ -84,7 +82,6 @@ end
 ---@field page number
 ---@field page_count number
 ---@field xpointer string | nil
----@field cfi string | nil
 
 ---@class ReadingSessionProgress
 ---@field grimmory_id number | nil
@@ -94,7 +91,6 @@ end
 ---@field end_progress number
 ---@field end_page number | nil
 ---@field end_xpointer string | nil
----@field end_cfi string | nil
 
 ---@class GrimmoryLocalRepository
 ---@field migrations_path string
@@ -399,8 +395,7 @@ end
 ---@param current_page number
 ---@param page_count number
 ---@param xpointer string | nil
----@param cfi string | nil
-function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current_page, page_count, xpointer, cfi)
+function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current_page, page_count, xpointer)
     local ok, result = with_database(
         self.database_path,
         function(conn)
@@ -412,10 +407,9 @@ function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current
                         event_type,
                         current_page,
                         page_count,
-                        xpointer,
-                        cfi
+                        xpointer
                     )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
             ]])
 
             stmt:bind(
@@ -425,7 +419,6 @@ function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current
                 current_page,
                 page_count,
                 xpointer,
-                cfi
             )
 
             stmt:step()
@@ -458,7 +451,6 @@ function GrimmoryLocalRepository:getReadingProgress(book_id, cutoff)
                     book_event.current_page,
                     book_event.page_count,
                     book_event.xpointer,
-                    book_event.cfi
                 FROM (
                     SELECT
                         s.book_id,
@@ -506,8 +498,7 @@ function GrimmoryLocalRepository:getReadingProgress(book_id, cutoff)
                 end_time = end_time,
                 end_page = end_page,
                 end_progress = end_progress,
-                end_xpointer = row[7],
-                end_cfi = row[8],
+                end_xpointer = row[7]
             }
         end
     )
@@ -537,8 +528,7 @@ function GrimmoryLocalRepository:getPendingSessionEvents(book_id)
                     e.created_at,
                     e.current_page,
                     e.page_count,
-                    e.xpointer,
-                    e.cfi
+                    e.xpointer
                 FROM book AS b
                 LEFT JOIN book_sync_status AS bss
                     ON bss.book_id = b.id AND bss.sync_type = 'sessions'
@@ -568,7 +558,6 @@ function GrimmoryLocalRepository:getPendingSessionEvents(book_id)
                     page = tonumber(row[7]) or 0,
                     page_count = tonumber(row[8]) or 0,
                     xpointer = row[9],
-                    cfi = row[10],
                 }
 
                 table.insert(results, event)
@@ -645,7 +634,6 @@ function GrimmoryLocalRepository:getPendingSessions(book_id)
                 sessions[#sessions].end_page = event.page
                 sessions[#sessions].end_progress = read_progress
                 sessions[#sessions].end_xpointer = event.xpointer
-                sessions[#sessions].end_cfi = event.cfi
             end
         end
 
@@ -667,8 +655,6 @@ function GrimmoryLocalRepository:getPendingSessions(book_id)
                 end_progress = read_progress,
                 start_xpointer = event.xpointer,
                 end_xpointer = event.xpointer,
-                start_cfi = event.cfi,
-                end_cfi = event.cfi,
             }
 
             table.insert(sessions, new_session)
