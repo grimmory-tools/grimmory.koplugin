@@ -450,7 +450,7 @@ function GrimmoryLocalRepository:getReadingProgress(book_id, cutoff)
                     book_event.created_at,
                     book_event.current_page,
                     book_event.page_count,
-                    book_event.xpointer,
+                    book_event.xpointer
                 FROM (
                     SELECT
                         s.book_id,
