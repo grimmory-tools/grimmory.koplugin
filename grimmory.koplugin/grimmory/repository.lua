@@ -418,7 +418,7 @@ function GrimmoryLocalRepository:insertBookEvent(session_id, event_type, current
                 event_type,
                 current_page,
                 page_count,
-                xpointer,
+                xpointer
             )
 
             stmt:step()
