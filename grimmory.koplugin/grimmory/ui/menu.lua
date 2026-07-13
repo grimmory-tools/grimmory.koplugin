@@ -11,6 +11,22 @@ local GrimmoryLogger = require("grimmory/logger")
 
 local logger = GrimmoryLogger:new()
 
+local function formatTargetDescription(items)
+    local description = "All"
+
+    local count = 0
+    for _, item in ipairs(items) do
+        if count == 0 then
+            description = item.name
+        else
+            description = description .. ", " .. item.name
+        end
+        count = count + 1
+    end
+
+    return description
+end
+
 ---@class GrimmoryMenu
 ---@field ui any This is a ReaderUI
 ---@field settings GrimmorySettings
@@ -221,21 +237,10 @@ function GrimmoryMenu:getDownloadOptionsMenu()
         },
         {
             text_func = function()
-                local targetDescription = "All"
-
-                local targetLibraries = self.settings:getDownloadTargetLibraries()
-
-                local count = 0
-                for _, library in ipairs(targetLibraries) do
-                    if count == 0 then
-                        targetDescription = library.name
-                    else
-                        targetDescription = targetDescription .. ", " .. library.name
-                    end
-                    count = count + 1
-                end
-
-                return T(_("Source Libraries: %1"), targetDescription)
+                return T(
+                    _("Source Libraries: %1"),
+                    formatTargetDescription(self.settings:getDownloadTargetLibraries())
+                )
             end,
             enabled_func = function()
                 if self.settings:getBaseUri() == "" then
@@ -251,21 +256,10 @@ function GrimmoryMenu:getDownloadOptionsMenu()
         },
         {
             text_func = function()
-                local targetDescription = "All"
-
-                local targetShelves = self.settings:getDownloadTargetShelves()
-
-                local count = 0
-                for _, shelf in ipairs(targetShelves) do
-                    if count == 0 then
-                        targetDescription = shelf.name
-                    else
-                        targetDescription = targetDescription .. ", " .. shelf.name
-                    end
-                    count = count + 1
-                end
-
-                return T(_("Source Shelves: %1"), targetDescription)
+                return T(
+                    _("Source Shelves: %1"),
+                    formatTargetDescription(self.settings:getDownloadTargetShelves())
+                )
             end,
             enabled_func = function()
                 if self.settings:getBaseUri() == "" then
