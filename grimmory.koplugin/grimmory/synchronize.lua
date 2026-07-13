@@ -266,6 +266,10 @@ function GrimmorySynchronize:isTargetBook(book)
         return false
     end
 
+    if not self:isTargetLibrary(book) then
+        return false
+    end
+
     local target_shelves = self.settings:getDownloadTargetShelves() or {}
 
     if #target_shelves == 0 then
@@ -282,6 +286,28 @@ function GrimmorySynchronize:isTargetBook(book)
         end
     end
 
+    return false
+end
+
+function GrimmorySynchronize:isTargetLibrary(book)
+    local target_libraries = self.settings:getDownloadTargetLibraries() or {}
+
+    if #target_libraries == 0 then
+        return true
+    end
+
+    if book.library_id == nil then
+        logger:info("Book skipped because library ID is missing:", book.id)
+        return false
+    end
+
+    for _, library in ipairs(target_libraries) do
+        if library.id == book.library_id then
+            return true
+        end
+    end
+
+    logger:dbg("Book skipped because library is not selected:", book.id, book.library_id)
     return false
 end
 
@@ -777,7 +803,9 @@ function GrimmorySynchronize:pullBooks(callback)
     local seen_grimmory_ids = {}
 
     for book, element_count, total_books in self.api:getBooks() do
-        if self:isTargetBook(book) then
+        if not self:isTargetLibrary(book) then
+            seen_grimmory_ids[tostring(book.id)] = true
+        elseif self:isTargetBook(book) then
             seen_grimmory_ids[tostring(book.id)] = true
 
             local pull_ok, pull_path_or_message, is_downloaded = pcall(self.pullBook, self, book, callback)

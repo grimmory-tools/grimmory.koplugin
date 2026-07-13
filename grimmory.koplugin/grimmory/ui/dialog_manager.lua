@@ -192,6 +192,80 @@ function DialogManager:showTargetShelvesSettings()
     UIManager:show(dialog)
 end
 
+function DialogManager:showTargetLibrariesSettings()
+    local dialog
+    local ok, result = self.api:getLibraries()
+
+    if not ok or type(result) == "string" then
+        logger:err("Something went wrong loading libraries", result)
+        self:toast(T(_("Could not load libraries: %1"), result))
+        return
+    end
+
+    local buttons = {
+        {
+            {
+                text = _("Cancel Selection"),
+                callback = function()
+                    UIManager:close(dialog)
+                end,
+            }
+        },
+        {
+            {
+                text = _("All Libraries"),
+                callback = function()
+                    logger:dbg("Set target libraries to All Libraries")
+                    self.settings:setDownloadTargetLibraries({})
+
+                    UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+
+                    UIManager:close(dialog)
+                end,
+            }
+        }
+    }
+
+    local libraryNameToId = {}
+
+    for _, library in ipairs(result) do
+        local libraryName = library.name
+        local libraryId = library.id
+
+        local uniqueLibraryName = libraryName
+        local uniqueLibraryIndex = 0
+        while libraryNameToId[uniqueLibraryName] do
+            uniqueLibraryIndex = uniqueLibraryIndex + 1
+            uniqueLibraryName = libraryName .. " " .. uniqueLibraryIndex
+        end
+        libraryNameToId[uniqueLibraryName] = libraryId
+
+        table.insert(
+            buttons,
+            {
+                {
+                    text = uniqueLibraryName,
+                    callback = function()
+                        logger:dbg("Set target libraries to library ID", libraryId)
+                        self.settings:setDownloadTargetLibraries({ { id = libraryId, name = uniqueLibraryName } })
+
+                        UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+
+                        UIManager:close(dialog)
+                    end
+                }
+            }
+        )
+    end
+
+    dialog = ButtonDialog:new({
+        title = _("Target Libraries"),
+        buttons = buttons,
+    })
+
+    UIManager:show(dialog)
+end
+
 function DialogManager:showSyncFrequencySettings()
     local dialog
     dialog = MultiInputDialog:new({

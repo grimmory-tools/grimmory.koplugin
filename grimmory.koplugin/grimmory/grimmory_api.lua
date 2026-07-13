@@ -91,6 +91,8 @@ end
 
 ---@class Book
 ---@field id number
+---@field library_id number | nil
+---@field library_name string | nil
 ---@field added_on number
 ---@field shelves number[]
 ---@field metadata BookMetadata
@@ -139,6 +141,8 @@ local function parse_book(book)
 
     return {
         id = from_json_number(book.id),
+        library_id = from_json_number(book["libraryId"]),
+        library_name = from_json_string(book["libraryName"]),
         added_on = from_json_iso8601(book["addedOn"]),
         shelves = shelves,
         metadata = metadata,
@@ -543,6 +547,38 @@ function GrimmoryAPI:getShelves()
     end
 
     return ok, shelves
+end
+
+function GrimmoryAPI:getLibraries()
+    local ok, _, body = self:request(
+        "GET",
+        "/api/v1/app/libraries"
+    )
+
+    if not ok then
+        ok, _, body = self:request(
+            "GET",
+            "/api/v1/libraries"
+        )
+    end
+
+    if not ok then
+        logger:err("Could not get libraries", body)
+        return false, body
+    end
+
+    local libraries = {}
+    for _, body_library in ipairs(body) do
+        local library = {
+            id = from_json_number(body_library.id),
+            name = from_json_string(body_library.name),
+            book_count = from_json_number(body_library.bookCount, 0),
+        }
+
+        table.insert(libraries, library)
+    end
+
+    return ok, libraries
 end
 
 ---@param book_id number

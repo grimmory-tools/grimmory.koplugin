@@ -16,6 +16,10 @@ local logger = GrimmoryLogger:new()
 ---@field id number
 ---@field name string
 
+---@class GrimmoryTargetLibrary
+---@field id number
+---@field name string
+
 ---@class GrimmorySettingsData
 ---@field automatic_check_updates boolean
 ---@field base_uri string
@@ -33,6 +37,7 @@ local logger = GrimmoryLogger:new()
 ---@field sync_shelves boolean
 ---@field download_remove_books boolean
 ---@field sync_target_shelves GrimmoryTargetShelf[]
+---@field sync_target_libraries GrimmoryTargetLibrary[]
 ---@field sync_download_directory string
 ---@field sync_reading_sessions boolean
 ---@field sync_reading_progress boolean
@@ -60,6 +65,7 @@ local DEFAULTS = {
     sync_shelves = true,
     download_remove_books = false,
     sync_target_shelves = {},
+    sync_target_libraries = {},
     sync_download_directory = "grimmory/",
     sync_reading_sessions = true,
     sync_reading_progress = true,
@@ -247,6 +253,16 @@ end
 ---@param target_shelves GrimmoryTargetShelf[]
 function GrimmorySettings:setDownloadTargetShelves(target_shelves)
     self.data.sync_target_shelves = target_shelves
+    self:write()
+end
+
+function GrimmorySettings:getDownloadTargetLibraries()
+    return self.data.sync_target_libraries or DEFAULTS.sync_target_libraries
+end
+
+---@param target_libraries GrimmoryTargetLibrary[]
+function GrimmorySettings:setDownloadTargetLibraries(target_libraries)
+    self.data.sync_target_libraries = target_libraries
     self:write()
 end
 

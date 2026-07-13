@@ -223,6 +223,36 @@ function GrimmoryMenu:getDownloadOptionsMenu()
             text_func = function()
                 local targetDescription = "All"
 
+                local targetLibraries = self.settings:getDownloadTargetLibraries()
+
+                local count = 0
+                for _, library in ipairs(targetLibraries) do
+                    if count == 0 then
+                        targetDescription = library.name
+                    else
+                        targetDescription = targetDescription .. ", " .. library.name
+                    end
+                    count = count + 1
+                end
+
+                return T(_("Source Libraries: %1"), targetDescription)
+            end,
+            enabled_func = function()
+                if self.settings:getBaseUri() == "" then
+                    logger:info("BaseURI is not configured, cannot fetch libraries")
+                    return false
+                end
+
+                return true
+            end,
+            callback = function()
+                self.dialog_manager:showTargetLibrariesSettings()
+            end,
+        },
+        {
+            text_func = function()
+                local targetDescription = "All"
+
                 local targetShelves = self.settings:getDownloadTargetShelves()
 
                 local count = 0
@@ -230,7 +260,7 @@ function GrimmoryMenu:getDownloadOptionsMenu()
                     if count == 0 then
                         targetDescription = shelf.name
                     else
-                        targetDescription = targetShelves .. ", " .. shelf.name
+                        targetDescription = targetDescription .. ", " .. shelf.name
                     end
                     count = count + 1
                 end
