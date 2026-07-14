@@ -2,7 +2,6 @@ local Event = require("ui/event")
 local util = require("util")
 local md5 = require("ffi/sha2").md5
 
-local DocMetadata = require("grimmory/doc_metadata")
 local GrimmoryLogger = require("grimmory/logger")
 
 local logger = GrimmoryLogger:new()
@@ -43,6 +42,7 @@ end
 ---@field repository GrimmoryLocalRepository
 ---@field settings GrimmorySettings
 ---@field reading_recorder ReadingRecorder
+---@field doc_metadata DocMetadata
 ---@field private koreader_auth_id string | nil
 ---@field private koreader_auth_secret_md5 string | nil
 local ReadingProgressManager = {}
@@ -247,7 +247,7 @@ function ReadingProgressManager:applyProgress(progress)
         self.ui:handleEvent(Event:new("GoToPercent", tonumber(progress.end_progress)))
     else
         -- Write doc metadata
-        DocMetadata:setProgress(
+        self.doc_metadata:setProgress(
             progress.book_path,
             progress.end_progress,
             progress.end_xpointer,
