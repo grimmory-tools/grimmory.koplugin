@@ -6,6 +6,16 @@ local util = require("util")
 local GrimmoryLogger = require("grimmory/logger")
 local logger = GrimmoryLogger:new()
 
+local function apply_dom_version(settings)
+    -- Hack to prevent us from getting a weird message from koreader
+    -- There may be another way but this seems to be the simplest
+    -- and we only set it if it's not already set.
+    settings:saveSetting(
+        "cre_dom_version",
+        settings:readSetting("cre_dom_version", 20200223)
+    )
+end
+
 ---@class GrimmoryDocMetadata
 ---@field private props_cache any
 ---@field private ui any
@@ -178,7 +188,15 @@ end
 
 ---@param path string
 function DocMetadata:clearProgress(path)
-    self:setProgress(path, nil, nil, nil)
+    local settings = self:getDocSettings(path)
+
+    apply_dom_version(settings)
+
+    settings:delSetting("percent_finished")
+    settings:delSetting("last_xpointer")
+    settings:delSetting("last_page")
+
+    settings:flush()
 end
 
 ---@param path string
@@ -188,30 +206,18 @@ end
 function DocMetadata:setProgress(path, percent, xpointer, page)
     local settings = self:getDocSettings(path)
 
-    -- Hack to prevent us from getting a weird message from koreader
-    -- There may be another way but this seems to be the simplest
-    -- and we only set it if it's not already set.
-    settings:readSetting(
-        "cre_dom_version",
-        settings:readSetting("cre_dom_version", 20200223)
-    )
+    apply_dom_version(settings)
 
     if percent ~= nil then
         settings:saveSetting("percent_finished", percent / 100)
-    else
-        settings:delSetting("percent_finished")
     end
 
     if xpointer ~= nil then
         settings:saveSetting("last_xpointer", xpointer)
-    else
-        settings:delSetting("last_xpointer")
     end
 
     if page ~= nil then
         settings:saveSetting("last_page", page)
-    else
-        settings:delSetting("last_page")
     end
 
     settings:flush()
