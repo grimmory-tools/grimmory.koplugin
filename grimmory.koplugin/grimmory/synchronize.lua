@@ -260,7 +260,11 @@ function GrimmorySynchronize:pushAllPendingBookMetadata(callback)
     -- catalog entry (e.g. downloaded outside of this plugin) would
     -- otherwise never be picked up by getBooksPendingSync below, since
     -- it requires a grimmory_id to already be present.
-    self:associateUnlinkedBooks(callback)
+    --
+    -- This is pcall'd for the same reason pushBookMetadata is below: a
+    -- failure linking one book (or reaching the catalog at all) shouldn't
+    -- abort syncing progress/sessions for every other already-linked book.
+    pcall(self.associateUnlinkedBooks, self, callback)
 
     local book_ids = self.repository:getBooksPendingSync(
         self.settings:getSyncReadingSessions(),

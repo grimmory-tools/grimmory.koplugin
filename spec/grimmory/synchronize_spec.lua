@@ -72,6 +72,7 @@ describe("GrimmorySynchronize", function()
 
         fake_settings = {
             getSyncReadingSessions = spy.new(function() return true end),
+            getSyncReadingProgress = spy.new(function() return true end),
             getSessionThresholdSeconds = spy.new(function() return 30 end),
             getSessionThresholdPages = spy.new(function() return 0 end),
             getDownloadDirectory = spy.new(function() return "/downloads" end),
@@ -261,6 +262,33 @@ describe("GrimmorySynchronize", function()
 
             assert.spy(fake_repository.upsertBook).was_not_called()
             assert.spy(callback).was_not_called()
+        end)
+    end)
+
+    describe("pushAllPendingBookMetadata", function()
+        it("still syncs already-linked books when associateUnlinkedBooks fails", function()
+            fake_repository.getUnlinkedBooksWithEvents = spy.new(function()
+                return { { id = 1, book_path = "/books/a.epub" } }
+            end)
+
+            -- Simulate a failure while trying to reach the remote catalog
+            -- (e.g. a network error mid-pagination), which associateBook
+            -- would otherwise raise via `error(...)`.
+            fake_api.getBooks = spy.new(function()
+                error("network error")
+            end)
+
+            fake_repository.getBooksPendingSync = spy.new(function() return { 42 } end)
+
+            synchronize:pushAllPendingBookMetadata(callback)
+
+            assert.spy(fake_repository.getBooksPendingSync).was_called(1)
+            assert.spy(callback).was_called_with(match.same({
+                state = "push-book-metadata",
+                book_id = 42,
+                pushed_books = 1,
+                total_books = 1,
+            }))
         end)
     end)
 
