@@ -509,6 +509,18 @@ function GrimmorySynchronize:downloadBook(book_id, download_path)
 end
 
 ---@param book Book
+---@return string | nil book_path a known local file that is this book, if any
+function GrimmorySynchronize:findLocalBookMatch(book)
+    for _, local_book in ipairs(self.repository:getUnlinkedBooks()) do
+        if util.fileExists(local_book.book_path) and self.doc_metadata:isBook(local_book.book_path, book) then
+            return local_book.book_path
+        end
+    end
+
+    return nil
+end
+
+---@param book Book
 ---@return string download_path
 function GrimmorySynchronize:getBookDownloadPath(book)
     local existing_book_ok, existing_books = self.repository:findBooksByGrimmoryId(book.id)
@@ -521,6 +533,15 @@ function GrimmorySynchronize:getBookDownloadPath(book)
                 return local_book.book_path
             end
         end
+    end
+
+    -- Before downloading a fresh copy, check whether a file we already
+    -- know about (but haven't linked to this book yet) is actually the
+    -- same book under a different path/filename - e.g. downloaded via
+    -- OPDS, or copied over manually before this plugin was installed.
+    local local_match = self:findLocalBookMatch(book)
+    if local_match ~= nil then
+        return local_match
     end
 
     local download_directory = self.settings:getDownloadDirectory()

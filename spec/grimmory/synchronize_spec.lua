@@ -32,13 +32,17 @@ package.preload["ffi/MD5"] = function()
     }
 end
 
+-- Paths considered to exist on disk by the fake `util.fileExists` below,
+-- reset before each test.
+local existing_files = {}
+
 package.preload["util"] = function()
     return {
         getFileNameSuffix = function(path)
             return path:match("^.+%.(%w+)$") or ""
         end,
         partialMD5 = function() return "" end,
-        fileExists = function() return false end,
+        fileExists = function(path) return existing_files[path] == true end,
         getSafeFilename = function(name) return name end,
         findFiles = function() end,
         makePath = function() return true end,
@@ -64,17 +68,22 @@ describe("GrimmorySynchronize", function()
     local callback
 
     before_each(function()
+        existing_files = {}
+
         fake_settings = {
             getSyncReadingSessions = spy.new(function() return true end),
             getSessionThresholdSeconds = spy.new(function() return 30 end),
             getSessionThresholdPages = spy.new(function() return 0 end),
+            getDownloadDirectory = spy.new(function() return "/downloads" end),
         }
 
         fake_repository = {
             getPendingSessions = spy.new(function() return {} end),
             updateBookSyncTimestamp = spy.new(function() return true end),
             getUnlinkedBooksWithEvents = spy.new(function() return {} end),
+            getUnlinkedBooks = spy.new(function() return {} end),
             upsertBook = spy.new(function() return true end),
+            findBooksByGrimmoryId = spy.new(function() return true, {} end),
         }
 
         fake_api = {
@@ -252,6 +261,53 @@ describe("GrimmorySynchronize", function()
 
             assert.spy(fake_repository.upsertBook).was_not_called()
             assert.spy(callback).was_not_called()
+        end)
+    end)
+
+    describe("getBookDownloadPath", function()
+        local remote_book
+
+        before_each(function()
+            remote_book = {
+                id = 734,
+                primary_file = { filename = "Norte & Sul.epub" },
+            }
+        end)
+
+        it("reuses a previously downloaded file tracked for this grimmory_id", function()
+            existing_files["/downloads/existing.epub"] = true
+
+            fake_repository.findBooksByGrimmoryId = spy.new(function()
+                return true, { { book_path = "/downloads/existing.epub", book_md5 = "" } }
+            end)
+
+            local download_path = synchronize:getBookDownloadPath(remote_book)
+
+            assert.equal("/downloads/existing.epub", download_path)
+        end)
+
+        it("reuses a local file already on disk under a different name/path", function()
+            existing_files["/mnt/us/calibre/Some Other Name.epub"] = true
+
+            fake_repository.getUnlinkedBooks = spy.new(function()
+                return {
+                    { id = 1, book_path = "/mnt/us/calibre/Some Other Name.epub" },
+                }
+            end)
+
+            fake_doc_metadata.isBook = spy.new(function(_, path, book)
+                return path == "/mnt/us/calibre/Some Other Name.epub" and book == remote_book
+            end)
+
+            local download_path = synchronize:getBookDownloadPath(remote_book)
+
+            assert.equal("/mnt/us/calibre/Some Other Name.epub", download_path)
+        end)
+
+        it("falls back to a fresh download path when there is no local match", function()
+            local download_path = synchronize:getBookDownloadPath(remote_book)
+
+            assert.equal("/downloads/Norte & Sul.epub", download_path)
         end)
     end)
 end)

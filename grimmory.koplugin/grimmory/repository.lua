@@ -858,4 +858,46 @@ function GrimmoryLocalRepository:getUnlinkedBooksWithEvents()
     return books
 end
 
+---@return GrimmoryUnlinkedBook[]
+function GrimmoryLocalRepository:getUnlinkedBooks()
+    local ok, books = with_database(
+        self.database_path,
+        function(conn)
+            local stmt = conn:prepare([[
+                SELECT
+                    id,
+                    book_path
+                FROM book
+                WHERE
+                    grimmory_id IS NULL
+            ]])
+
+            ---@type GrimmoryUnlinkedBook[]
+            local results = {}
+
+            for row in stmt:rows() do
+                local book_id = tonumber(row[1])
+
+                if book_id then
+                    table.insert(results, {
+                        id = book_id,
+                        book_path = row[2],
+                    })
+                end
+            end
+
+            stmt:close()
+
+            return results
+        end
+    )
+
+    if not ok or not books then
+        logger:err("Failed to get unlinked books", books)
+        return {}
+    end
+
+    return books
+end
+
 return GrimmoryLocalRepository
