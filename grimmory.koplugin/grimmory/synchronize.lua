@@ -99,6 +99,20 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
 
     local sessions = self.repository:getPendingSessions(book_id)
 
+    if #sessions > 0 and sessions[1].grimmory_id == nil then
+        -- The book has reading activity but hasn't been linked to a
+        -- Grimmory catalog entry yet, so there's nowhere to record these
+        -- sessions against. This isn't a transient failure - retrying
+        -- won't help until the book gets linked (see associateUnlinkedBooks) -
+        -- so report it once instead of failing every pending session below.
+        logger:info("Skipping session sync, book is not linked to Grimmory:", book_id)
+        callback({
+            state = "session-unlinked",
+            bookPath = sessions[1].book_path,
+        })
+        return
+    end
+
     for _, session in ipairs(sessions) do
         local total_seconds = session.end_time - session.start_time
         local total_pages = session.end_page - session.start_page + 1
@@ -119,16 +133,6 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
                 since = session.end_time,
             })
 
-        elseif session.grimmory_id == nil then
-            logger:err("Session failed recording with error for book: ", book_id, " - ", "No Grimmory ID")
-            callback({
-                state = "session-error",
-                bookPath = session.book_path,
-            })
-
-            -- If an error happens for this session we bail early so
-            -- retries can happen again later
-            break
         else
             logger:dbg(
                 "Recording session",

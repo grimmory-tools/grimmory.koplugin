@@ -52,6 +52,7 @@ local GrimmorySynchronize = require("grimmory/synchronize")
 describe("GrimmorySynchronize", function()
     local fake_settings, fake_repository, fake_api
     local synchronize
+    local callback
 
     before_each(function()
         fake_settings = {
@@ -74,6 +75,8 @@ describe("GrimmorySynchronize", function()
             repository = fake_repository,
             api = fake_api,
         })
+
+        callback = spy.new(function() end)
     end)
 
     describe("pushBookSessions", function()
@@ -93,7 +96,7 @@ describe("GrimmorySynchronize", function()
                 }
             end)
 
-            synchronize:pushBookSessions(1, function() end)
+            synchronize:pushBookSessions(1, callback)
 
             assert.spy(fake_api.recordSession).was_called_with(
                 match._,
@@ -101,6 +104,64 @@ describe("GrimmorySynchronize", function()
                 "CBZ",
                 1000, 1100, 0, 10, "1", "5"
             )
+        end)
+
+        it("skips pending sessions once when book isn't linked, without erroring per-session", function()
+            fake_repository.getPendingSessions = spy.new(function()
+                return {
+                    {
+                        grimmory_id = nil,
+                        book_path = "/books/unlinked.epub",
+                        start_time = 1000,
+                        end_time = 1100,
+                        start_page = 1,
+                        end_page = 5,
+                        start_progress = 0,
+                        end_progress = 10,
+                    },
+                    {
+                        grimmory_id = nil,
+                        book_path = "/books/unlinked.epub",
+                        start_time = 1200,
+                        end_time = 1300,
+                        start_page = 5,
+                        end_page = 9,
+                        start_progress = 10,
+                        end_progress = 20,
+                    },
+                }
+            end)
+
+            synchronize:pushBookSessions(1, callback)
+
+            assert.spy(fake_api.recordSession).was_not_called()
+            assert.spy(callback).was_called(1)
+            assert.spy(callback).was_called_with(match.same({
+                state = "session-unlinked",
+                bookPath = "/books/unlinked.epub",
+            }))
+        end)
+
+        it("still records sessions normally once a book is linked", function()
+            fake_repository.getPendingSessions = spy.new(function()
+                return {
+                    {
+                        grimmory_id = 7,
+                        book_path = "/books/linked.epub",
+                        start_time = 1000,
+                        end_time = 1100,
+                        start_page = 1,
+                        end_page = 5,
+                        start_progress = 0,
+                        end_progress = 10,
+                    },
+                }
+            end)
+
+            synchronize:pushBookSessions(1, callback)
+
+            assert.spy(fake_api.recordSession).was_called(1)
+            assert.spy(fake_repository.updateBookSyncTimestamp).was_called_with(match._, 1, "sessions", 1100)
         end)
     end)
 end)
