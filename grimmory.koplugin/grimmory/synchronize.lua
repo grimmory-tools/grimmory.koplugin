@@ -641,20 +641,9 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
 end
 
 ---@param book_path string
----@param remote_books Book[] | nil pre-fetched catalog to search against, to
----       avoid re-fetching the whole catalog when matching many local books
 ---@return integer | nil grimmory_id
-function GrimmorySynchronize:associateBook(book_path, remote_books)
-    local books = remote_books
-
-    if books == nil then
-        books = {}
-        for book in self.api:getBooks() do
-            table.insert(books, book)
-        end
-    end
-
-    for _, book in ipairs(books) do
+function GrimmorySynchronize:associateBook(book_path)
+    for book in self.api:getBooks() do
         if self.doc_metadata:isBook(book_path, book) then
             local ok = self.repository:upsertBook(book_path, book.id)
 
@@ -680,25 +669,44 @@ function GrimmorySynchronize:associateUnlinkedBooks(callback)
 
     logger:info("Attempting to link", #unlinked_books, "book(s) with reading activity to Grimmory")
 
-    -- Fetch the remote catalog once and reuse it for every unlinked book,
-    -- rather than re-scanning the whole catalog per book.
-    local remote_books = {}
-    for book in self.api:getBooks() do
-        table.insert(remote_books, book)
+    -- Walk the remote catalog a page at a time (via the getBooks iterator)
+    -- and check it against whatever local books are still unmatched,
+    -- rather than loading the whole catalog into memory at once - this can
+    -- otherwise be sizeable, and devices running this plugin are often
+    -- memory-constrained. `remaining` shrinks as books get linked, so we
+    -- can stop as soon as everything's matched without reading the rest
+    -- of the catalog.
+    local remaining = {}
+    for _, unlinked_book in ipairs(unlinked_books) do
+        table.insert(remaining, unlinked_book)
     end
 
-    for _, unlinked_book in ipairs(unlinked_books) do
-        local grimmory_id = self:associateBook(unlinked_book.book_path, remote_books)
+    for book in self.api:getBooks() do
+        for index = #remaining, 1, -1 do
+            local unlinked_book = remaining[index]
 
-        if grimmory_id ~= nil then
-            logger:info("Linked book to Grimmory:", unlinked_book.book_path, "-", grimmory_id)
+            if self.doc_metadata:isBook(unlinked_book.book_path, book) then
+                local ok = self.repository:upsertBook(unlinked_book.book_path, book.id)
 
-            callback({
-                state = "book-linked",
-                book_id = unlinked_book.id,
-                book_path = unlinked_book.book_path,
-                grimmory_id = grimmory_id,
-            })
+                if ok then
+                    logger:info("Linked book to Grimmory:", unlinked_book.book_path, "-", book.id)
+
+                    callback({
+                        state = "book-linked",
+                        book_id = unlinked_book.id,
+                        book_path = unlinked_book.book_path,
+                        grimmory_id = book.id,
+                    })
+                else
+                    logger:err("Failed to write book association:", unlinked_book.book_path)
+                end
+
+                table.remove(remaining, index)
+            end
+        end
+
+        if #remaining == 0 then
+            break
         end
     end
 end
