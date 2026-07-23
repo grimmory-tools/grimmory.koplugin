@@ -49,8 +49,17 @@ end
 
 local GrimmorySynchronize = require("grimmory/synchronize")
 
+---@param book_list table iterated once per call, mirrors GrimmoryAPI:getBooks()
+local function fakeGetBooksIterator(book_list)
+    local index = 0
+    return function()
+        index = index + 1
+        return book_list[index]
+    end
+end
+
 describe("GrimmorySynchronize", function()
-    local fake_settings, fake_repository, fake_api
+    local fake_settings, fake_repository, fake_api, fake_doc_metadata
     local synchronize
     local callback
 
@@ -64,16 +73,24 @@ describe("GrimmorySynchronize", function()
         fake_repository = {
             getPendingSessions = spy.new(function() return {} end),
             updateBookSyncTimestamp = spy.new(function() return true end),
+            getUnlinkedBooksWithEvents = spy.new(function() return {} end),
+            upsertBook = spy.new(function() return true end),
         }
 
         fake_api = {
             recordSession = spy.new(function() return true end),
+            getBooks = spy.new(function() return fakeGetBooksIterator({}) end),
+        }
+
+        fake_doc_metadata = {
+            isBook = spy.new(function() return false end),
         }
 
         synchronize = GrimmorySynchronize:new({
             settings = fake_settings,
             repository = fake_repository,
             api = fake_api,
+            doc_metadata = fake_doc_metadata,
         })
 
         callback = spy.new(function() end)
@@ -162,6 +179,79 @@ describe("GrimmorySynchronize", function()
 
             assert.spy(fake_api.recordSession).was_called(1)
             assert.spy(fake_repository.updateBookSyncTimestamp).was_called_with(match._, 1, "sessions", 1100)
+        end)
+    end)
+
+    describe("associateUnlinkedBooks", function()
+        it("does nothing when there are no unlinked books", function()
+            synchronize:associateUnlinkedBooks(callback)
+
+            assert.spy(fake_api.getBooks).was_not_called()
+            assert.spy(callback).was_not_called()
+        end)
+
+        it("fetches the remote catalog once and links matching books", function()
+            fake_repository.getUnlinkedBooksWithEvents = spy.new(function()
+                return {
+                    { id = 1, book_path = "/books/a.epub" },
+                    { id = 2, book_path = "/books/b.epub" },
+                }
+            end)
+
+            local remote_book_a = { id = 100 }
+            local remote_book_b = { id = 200 }
+
+            fake_api.getBooks = spy.new(function()
+                return fakeGetBooksIterator({ remote_book_a, remote_book_b })
+            end)
+
+            fake_doc_metadata.isBook = spy.new(function(_, path, book)
+                if path == "/books/a.epub" then
+                    return book == remote_book_a
+                end
+                if path == "/books/b.epub" then
+                    return book == remote_book_b
+                end
+                return false
+            end)
+
+            synchronize:associateUnlinkedBooks(callback)
+
+            -- The catalog should only be fetched once, even though there
+            -- are two unlinked local books to match against it.
+            assert.spy(fake_api.getBooks).was_called(1)
+
+            assert.spy(fake_repository.upsertBook).was_called_with(match._, "/books/a.epub", 100)
+            assert.spy(fake_repository.upsertBook).was_called_with(match._, "/books/b.epub", 200)
+
+            assert.spy(callback).was_called(2)
+            assert.spy(callback).was_called_with(match.same({
+                state = "book-linked",
+                book_id = 1,
+                book_path = "/books/a.epub",
+                grimmory_id = 100,
+            }))
+            assert.spy(callback).was_called_with(match.same({
+                state = "book-linked",
+                book_id = 2,
+                book_path = "/books/b.epub",
+                grimmory_id = 200,
+            }))
+        end)
+
+        it("does not call the callback for unlinked books that still have no match", function()
+            fake_repository.getUnlinkedBooksWithEvents = spy.new(function()
+                return {
+                    { id = 1, book_path = "/books/unknown.epub" },
+                }
+            end)
+
+            fake_doc_metadata.isBook = spy.new(function() return false end)
+
+            synchronize:associateUnlinkedBooks(callback)
+
+            assert.spy(fake_repository.upsertBook).was_not_called()
+            assert.spy(callback).was_not_called()
         end)
     end)
 end)

@@ -256,6 +256,12 @@ function GrimmorySynchronize:pushBookMetadata(book_id, callback)
 end
 
 function GrimmorySynchronize:pushAllPendingBookMetadata(callback)
+    -- Books with reading activity that were never linked to a Grimmory
+    -- catalog entry (e.g. downloaded outside of this plugin) would
+    -- otherwise never be picked up by getBooksPendingSync below, since
+    -- it requires a grimmory_id to already be present.
+    self:associateUnlinkedBooks(callback)
+
     local book_ids = self.repository:getBooksPendingSync(
         self.settings:getSyncReadingSessions(),
         self.settings:getSyncReadingProgress()
@@ -610,9 +616,20 @@ function GrimmorySynchronize:associateWithShelves(book_path, shelves)
 end
 
 ---@param book_path string
+---@param remote_books Book[] | nil pre-fetched catalog to search against, to
+---       avoid re-fetching the whole catalog when matching many local books
 ---@return integer | nil grimmory_id
-function GrimmorySynchronize:associateBook(book_path)
-    for book in self.api:getBooks() do
+function GrimmorySynchronize:associateBook(book_path, remote_books)
+    local books = remote_books
+
+    if books == nil then
+        books = {}
+        for book in self.api:getBooks() do
+            table.insert(books, book)
+        end
+    end
+
+    for _, book in ipairs(books) do
         if self.doc_metadata:isBook(book_path, book) then
             local ok = self.repository:upsertBook(book_path, book.id)
 
@@ -626,6 +643,39 @@ function GrimmorySynchronize:associateBook(book_path)
     end
 
     return nil
+end
+
+---@param callback function
+function GrimmorySynchronize:associateUnlinkedBooks(callback)
+    local unlinked_books = self.repository:getUnlinkedBooksWithEvents()
+
+    if #unlinked_books == 0 then
+        return
+    end
+
+    logger:info("Attempting to link", #unlinked_books, "book(s) with reading activity to Grimmory")
+
+    -- Fetch the remote catalog once and reuse it for every unlinked book,
+    -- rather than re-scanning the whole catalog per book.
+    local remote_books = {}
+    for book in self.api:getBooks() do
+        table.insert(remote_books, book)
+    end
+
+    for _, unlinked_book in ipairs(unlinked_books) do
+        local grimmory_id = self:associateBook(unlinked_book.book_path, remote_books)
+
+        if grimmory_id ~= nil then
+            logger:info("Linked book to Grimmory:", unlinked_book.book_path, "-", grimmory_id)
+
+            callback({
+                state = "book-linked",
+                book_id = unlinked_book.id,
+                book_path = unlinked_book.book_path,
+                grimmory_id = grimmory_id,
+            })
+        end
+    end
 end
 
 ---@param book_path string
