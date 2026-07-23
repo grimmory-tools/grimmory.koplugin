@@ -6,6 +6,20 @@ local GrimmoryLogger = require("grimmory/logger")
 
 local logger = GrimmoryLogger:new()
 
+---@param book_path string
+---@return string book_type
+local function getBookType(book_path)
+    local extension = util.getFileNameSuffix(book_path)
+
+    if extension == nil or extension == "" then
+        -- Fall back to the previous hardcoded default when the
+        -- extension can't be determined.
+        return "EPUB"
+    end
+
+    return extension:upper()
+end
+
 ---@class GrimmorySynchronize
 ---@field repository GrimmoryLocalRepository
 ---@field reading_annotations GrimmoryReadingAnnotations
@@ -130,6 +144,7 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
 
             local ok, body = self.api:recordSession(
                 session.grimmory_id,
+                getBookType(session.book_path),
                 session.start_time,
                 session.end_time,
                 session.start_progress,
