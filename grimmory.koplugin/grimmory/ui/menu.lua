@@ -220,33 +220,13 @@ function GrimmoryMenu:getDownloadOptionsMenu()
             end,
         },
         {
-            text_func = function()
-                local targetDescription = "All"
-
-                local targetShelves = self.settings:getDownloadTargetShelves()
-
-                local count = 0
-                for _, shelf in ipairs(targetShelves) do
-                    if count == 0 then
-                        targetDescription = shelf.name
-                    else
-                        targetDescription = targetShelves .. ", " .. shelf.name
-                    end
-                    count = count + 1
-                end
-
-                return T(_("Source Shelves: %1"), targetDescription)
+            text = _("Source Shelves"),
+            -- KOReader will fetch this dynamically when tapped and handle pagination automatically
+            sub_item_table_func = function()
+                return self:getShelvesSubMenu()
             end,
             enabled_func = function()
-                if self.settings:getBaseUri() == "" then
-                    logger:info("BaseURI is not configured, cannot fetch shelves")
-                    return false
-                end
-
-                return true
-            end,
-            callback = function()
-                self.dialog_manager:showTargetShelvesSettings()
+                return self.settings:getBaseUri() ~= ""
             end,
             separator = true,
         },
@@ -261,6 +241,75 @@ function GrimmoryMenu:getDownloadOptionsMenu()
             end,
         }
     }
+end
+
+function GrimmoryMenu:getShelvesSubMenu()
+    local ok, result = self.dialog_manager.api:getShelves()
+
+    if not ok or type(result) == "string" then
+        return {
+            {
+                text = _("Error loading shelves"),
+                enabled = false,
+            }
+        }
+    end
+
+    local currentShelves = self.settings:getDownloadTargetShelves() or {}
+    local activeSelections = {}
+    for _, shelf in ipairs(currentShelves) do
+        activeSelections[shelf.id] = true
+    end
+
+    local menu_items = {}
+
+    -- 1. Clear Selection Option
+    table.insert(menu_items, {
+        text = _("All Shelves (Clear Selection)"),
+        checked_func = function()
+            return next(activeSelections) == nil
+        end,
+        callback = function()
+            activeSelections = {}
+            self.settings:setDownloadTargetShelves({})
+            UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+        end,
+    })
+
+    -- 2. Dynamically build shelf list
+    for _, shelf in ipairs(result) do
+        local shelfId = shelf.id
+        local shelfName = shelf.name
+
+        table.insert(menu_items, {
+            text = shelfName,
+            checked_func = function()
+                return activeSelections[shelfId] == true
+            end,
+            callback = function()
+                if activeSelections[shelfId] then
+                    activeSelections[shelfId] = nil
+                else
+                    activeSelections[shelfId] = true
+                end
+
+                local newTargetShelves = {}
+                for _, s in ipairs(result) do
+                    if activeSelections[s.id] then
+                        table.insert(newTargetShelves, {
+                            id = s.id,
+                            name = s.name,
+                        })
+                    end
+                end
+
+                self.settings:setDownloadTargetShelves(newTargetShelves)
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+        })
+    end
+
+    return menu_items
 end
 
 function GrimmoryMenu:getTopMenu()
