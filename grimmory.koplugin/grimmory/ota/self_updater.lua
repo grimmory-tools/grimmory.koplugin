@@ -9,6 +9,7 @@ local sha2 = require("ffi/sha2")
 
 local PluginMetadata = require("grimmory/plugin_metadata")
 local GrimmoryLogger = require("grimmory/logger")
+local Version = require("grimmory/ota/version")
 
 local logger = GrimmoryLogger:new()
 
@@ -55,57 +56,11 @@ local function findPluginInArchive(reader)
     return ""
 end
 
----@param version string
----@return number major
----@return number minor
----@return number patch
----@return string | nil prerelease
----@return string | nil build
-local function parseVersion(version)
-    local major, minor, patch, labels = tostring(version):match("v?(%d+)%.(%d+)%.(%d+)(.*)")
-
-    local prerelease = nil
-    local build = nil
-
-    if labels then
-        local build_indicator_index = labels:find("+") or (#labels + 1)
-
-        if labels:sub(1, 1) == "-" then
-            prerelease = labels:sub(2, build_indicator_index - 1)
-            labels = labels:sub(build_indicator_index)
-        end
-
-        if labels:sub(1, 1) == "+" then
-            build = labels:sub(2)
-        end
-    end
-
-    return tonumber(major) or 0, tonumber(minor) or 0, tonumber(patch) or 0, prerelease, build
-end
-
 ---@param version_a string
 ---@param version_b string
+---@return boolean
 local function isVersionLater(version_a, version_b)
-    local major_a, minor_a, patch_a, prerelease_a = parseVersion(version_a)
-    local major_b, minor_b, patch_b, prerelease_b = parseVersion(version_b)
-
-    if major_b > major_a then
-        return true
-    end
-
-    if minor_b > minor_a then
-        return true
-    end
-
-    if patch_b > patch_a then
-        return true
-    end
-
-    if prerelease_b ~= prerelease_a then
-        return true
-    end
-
-    return false
+    return Version.isLater(version_a, version_b)
 end
 
 ---@class GrimmorySelfUpdater

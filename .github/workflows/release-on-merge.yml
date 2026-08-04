@@ -1,0 +1,89 @@
+name: Package merged upstream release
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'automation/upstream-v')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Verify merge and compute fork tag
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          upstream_tag="${BRANCH#automation/upstream-}"
+          if [ "$upstream_tag" = "$BRANCH" ] || ! printf '%s' "$upstream_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid automation branch: $BRANCH" >&2
+            exit 1
+          fi
+          upstream_version=${upstream_tag#v}
+          tag="v.${upstream_version}-hC-0.0.1"
+          git fetch https://github.com/grimmory-tools/grimmory.koplugin.git "refs/tags/${upstream_tag}:refs/tags/${upstream_tag}"
+          upstream_commit=$(git rev-parse "refs/tags/${upstream_tag}^{commit}")
+          merge_sha="${{ github.event.pull_request.merge_commit_sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          git fetch origin "refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/origin/pr-head"
+          [ "$(git rev-parse refs/remotes/origin/pr-head)" = "$head_sha" ] || { echo 'PR head changed' >&2; exit 1; }
+          parents=($(git rev-list --parents -n1 "$head_sha"))
+          [ "${#parents[@]}" -eq 3 ] || { echo 'Unexpected merge parents' >&2; exit 1; }
+          [ "${parents[2]}" = "$upstream_commit" ] || { echo 'Wrong upstream parent' >&2; exit 1; }
+          reconstructed=$(git merge-tree --write-tree "${parents[1]}" "$upstream_commit")
+          [ "$(git rev-parse "$head_sha^{tree}")" = "$reconstructed" ] || { echo 'Merge tree mismatch' >&2; exit 1; }
+          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+            if [ "$(git rev-parse "refs/tags/$tag^{commit}")" = "$merge_sha" ]; then
+              if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx 'grimmory.koplugin.zip'; then
+                echo 'skip=true' >> "$GITHUB_OUTPUT"; exit 0
+              fi
+              if gh release view "$tag" >/dev/null 2>&1; then echo 'mode=recover' >> "$GITHUB_OUTPUT"; fi
+            else
+              echo 'Fork tag points elsewhere' >&2; exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${upstream_version}-hC-0.0.1" >> "$GITHUB_OUTPUT"
+      - name: Update metadata and package
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s/(version = )\"[^\"]+\"/\1\"${VERSION}\"/; s/(repository = )\"[^\"]+\"/\1\"${REPOSITORY}\"/" grimmory.koplugin/_meta.lua
+          cp README.md LICENSE grimmory.koplugin/
+          zip -r grimmory.koplugin.zip grimmory.koplugin
+      - name: Create release and upload archive
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          UPSTREAM_TAG: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          upstream_tag="${UPSTREAM_TAG#automation/upstream-}"
+          notes="Synced to upstream [${upstream_tag}](https://github.com/grimmory-tools/grimmory.koplugin/releases/tag/${upstream_tag})."
+          if [ "${{ steps.version.outputs.mode }}" = recover ]; then
+            gh release edit "$TAG" --title "$TAG" --notes "$notes"
+            gh release upload "$TAG" grimmory.koplugin.zip --clobber
+          else
+            gh release create "$TAG" grimmory.koplugin.zip \
+              --target "${{ github.event.pull_request.merge_commit_sha }}" \
+              --title "$TAG" --notes "$notes"
+          fi

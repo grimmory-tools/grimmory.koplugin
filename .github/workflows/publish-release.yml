@@ -27,7 +27,10 @@ jobs:
         run: |
           set -ex
 
-          sed 's~\(version = \)".\+"~\1"'${VERSION//v}'"~' -i grimmory.koplugin/_meta.lua
+          RELEASE_VERSION="${VERSION#v.}"
+          RELEASE_VERSION="${RELEASE_VERSION#v}"
+          printf '%s' "$VERSION" | grep -Eq '^v\.[0-9]+\.[0-9]+\.[0-9]+-hC-[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Invalid release tag" >&2; exit 1; }
+          sed 's~\(version = \)".\+"~\1"'"$RELEASE_VERSION"'"~' -i grimmory.koplugin/_meta.lua
           sed 's~\(repository = \)".\+"~\1"'$REPOSITORY'"~' -i grimmory.koplugin/_meta.lua
       - name: Create archive
         run: |

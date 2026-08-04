@@ -1,0 +1,25 @@
+package.path = "grimmory.koplugin/?.lua;" .. package.path
+local Version = require("grimmory/ota/version")
+
+describe("OTA version ordering", function()
+    it("orders fork patch increments", function()
+        assert.is_true(Version.isLater("v.0.0.31-hC-0.0.1", "v.0.0.31-hC-0.0.2"))
+        assert.is_false(Version.isLater("v.0.0.31-hC-0.0.2", "v.0.0.31-hC-0.0.1"))
+    end)
+
+    it("orders upstream increments ahead of fork versions", function()
+        assert.is_true(Version.isLater("v.0.0.31-hC-9.9.9", "v.0.0.32-hC-0.0.1"))
+        assert.is_true(Version.isLater("v0.0.31", "v.0.0.31-hC-0.0.1"))
+    end)
+
+    it("accepts metadata versions without the v prefix", function()
+        assert.are.equal(0, Version.compare("0.0.31-hC-0.0.1", "v.0.0.31-hC-0.0.1"))
+    end)
+    it("rejects malformed candidates", function()
+        assert.is_false(Version.isLater("v0.0.31", "v0.0.32-junk"))
+        assert.is_false(Version.parse("v0.0.31-hC-0.0.1-junk").valid)
+    end)
+    it("orders releases after the snapshot baseline", function()
+        assert.is_true(Version.isLater("v0.0.0-snapshot", "v.0.0.31-hC-0.0.1"))
+    end)
+end)

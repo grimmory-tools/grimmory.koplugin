@@ -1,0 +1,79 @@
+name: Maintain upstream release
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    concurrency:
+      group: upstream-${{ github.repository }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Prepare upstream merge
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          upstream_tag=$(gh api repos/grimmory-tools/grimmory.koplugin/releases/latest --jq .tag_name)
+          printf '%s' "$upstream_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Invalid upstream tag" >&2; exit 1; }
+          upstream_version=${upstream_tag#v}
+          if git ls-remote --tags origin "refs/tags/v.${upstream_version}-hC-*" | grep -q .; then
+            echo "${upstream_tag} is already processed"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          branch="automation/upstream-${upstream_tag}"
+          if git ls-remote --heads origin "refs/heads/${branch}" | grep -q .; then
+            echo "${branch} already exists; waiting for its pull request"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch https://github.com/grimmory-tools/grimmory.koplugin.git "refs/tags/${upstream_tag}:refs/tags/${upstream_tag}"
+          if git merge-base --is-ancestor "refs/tags/${upstream_tag}" HEAD; then
+            echo "${upstream_tag} is already incorporated; no update pull request is needed"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git switch -c "$branch"
+          git merge --no-edit "refs/tags/${upstream_tag}"
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=$upstream_tag" >> "$GITHUB_OUTPUT"
+      - name: Busted
+        if: steps.prepare.outputs.proceed == 'true'
+        uses: lunarmodules/busted@v2.2.0
+      - name: Luacheck
+        if: steps.prepare.outputs.proceed == 'true'
+        uses: lunarmodules/luacheck@v1.2.0
+        with:
+          args: . --no-self
+      - name: Push branch and open PR
+        if: steps.prepare.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK: ${{ github.repository }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+          UPSTREAM_TAG: ${{ steps.prepare.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          git push --set-upstream origin "$BRANCH"
+          if ! gh pr list --repo "$FORK" --head "$BRANCH" --state open --json number --jq 'length' | grep -q '^0$'; then
+            echo "Pull request already exists"
+            exit 0
+          fi
+          gh pr create --repo "$FORK" --base main --head "$BRANCH" \
+            --title "Update from Grimmory ${UPSTREAM_TAG}" \
+            --body "Automated merge of the exact upstream release tag ${UPSTREAM_TAG}."
