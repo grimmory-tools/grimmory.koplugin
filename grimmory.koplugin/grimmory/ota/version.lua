@@ -9,14 +9,14 @@ function Version.parse(value)
     local text = tostring(value or "")
     local major, minor, patch, fork_major, fork_minor, fork_patch
     major, minor, patch, fork_major, fork_minor, fork_patch =
-        text:match("^v%.(%d+)%.(%d+)%.(%d+)-hC-(%d+)%.(%d+)%.(%d+)$")
+        text:match("^v%.(%d+)%.(%d+)%.(%d+)%-hC%-(%d+)%.(%d+)%.(%d+)$")
     if not major then
         major, minor, patch, fork_major, fork_minor, fork_patch =
-            text:match("^v(%d+)%.(%d+)%.(%d+)-hC-(%d+)%.(%d+)%.(%d+)$")
+            text:match("^v(%d+)%.(%d+)%.(%d+)%-hC%-(%d+)%.(%d+)%.(%d+)$")
     end
     if not major then
         major, minor, patch, fork_major, fork_minor, fork_patch =
-            text:match("^(%d+)%.(%d+)%.(%d+)-hC-(%d+)%.(%d+)%.(%d+)$")
+            text:match("^(%d+)%.(%d+)%.(%d+)%-hC%-(%d+)%.(%d+)%.(%d+)$")
     end
     if not major then major, minor, patch = text:match("^v(%d+)%.(%d+)%.(%d+)$") end
     if not major then major, minor, patch = text:match("^(%d+)%.(%d+)%.(%d+)$") end
