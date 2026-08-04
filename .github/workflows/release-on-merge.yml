@@ -58,6 +58,7 @@ jobs:
             fi
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=v${upstream_version}-hC-0.0.1" >> "$GITHUB_OUTPUT"
           echo "version=${upstream_version}-hC-0.0.1" >> "$GITHUB_OUTPUT"
       - name: Update metadata and package
         if: steps.version.outputs.skip != 'true'
@@ -74,16 +75,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          TITLE: ${{ steps.version.outputs.title }}
           UPSTREAM_TAG: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           upstream_tag="${UPSTREAM_TAG#automation/upstream-}"
           notes="Synced to upstream [${upstream_tag}](https://github.com/grimmory-tools/grimmory.koplugin/releases/tag/${upstream_tag})."
           if [ "${{ steps.version.outputs.mode }}" = recover ]; then
-            gh release edit "$TAG" --title "$TAG" --notes "$notes"
+            gh release edit "$TAG" --title "$TITLE" --notes "$notes"
             gh release upload "$TAG" grimmory.koplugin.zip --clobber
           else
             gh release create "$TAG" grimmory.koplugin.zip \
               --target "${{ github.event.pull_request.merge_commit_sha }}" \
-              --title "$TAG" --notes "$notes"
+              --title "$TITLE" --notes "$notes"
           fi
