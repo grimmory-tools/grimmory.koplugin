@@ -5,6 +5,18 @@ package.path = "grimmory.koplugin/?.lua;" .. package.path
 
 local original_plugin_metadata_preload = package.preload["grimmory/plugin_metadata"]
 local original_plugin_metadata_loaded = package.loaded["grimmory/plugin_metadata"]
+local original_gettext_preload = package.preload["gettext"]
+local original_gettext_loaded = package.loaded["gettext"]
+local original_logger_preload = package.preload["grimmory/logger"]
+local original_logger_loaded = package.loaded["grimmory/logger"]
+local original_api_loaded = package.loaded["grimmory/grimmory_api"]
+local dependency_names = { "socket.http", "ssl.https", "json", "ltn12" }
+local original_dependency_preload = {}
+local original_dependency_loaded = {}
+for _, name in ipairs(dependency_names) do
+    original_dependency_preload[name] = package.preload[name]
+    original_dependency_loaded[name] = package.loaded[name]
+end
 
 package.preload["socket.http"] = function()
     return {}
@@ -33,6 +45,10 @@ package.preload["ltn12"] = function()
     }
 end
 
+package.preload["gettext"] = function()
+    return function(text) return text end
+end
+
 package.preload["grimmory/logger"] = function()
     return {
         new = function()
@@ -52,10 +68,26 @@ package.preload["grimmory/plugin_metadata"] = function()
     }
 end
 
+package.loaded["grimmory/plugin_metadata"] = nil
+package.loaded["grimmory/logger"] = nil
+package.loaded["gettext"] = nil
+package.loaded["grimmory/grimmory_api"] = nil
+for _, name in ipairs(dependency_names) do
+    package.loaded[name] = nil
+end
 local GrimmoryAPI = require("grimmory/grimmory_api")
 
 package.preload["grimmory/plugin_metadata"] = original_plugin_metadata_preload
 package.loaded["grimmory/plugin_metadata"] = original_plugin_metadata_loaded
+package.preload["gettext"] = original_gettext_preload
+package.loaded["gettext"] = original_gettext_loaded
+package.preload["grimmory/logger"] = original_logger_preload
+package.loaded["grimmory/logger"] = original_logger_loaded
+package.loaded["grimmory/grimmory_api"] = original_api_loaded
+for _, name in ipairs(dependency_names) do
+    package.preload[name] = original_dependency_preload[name]
+    package.loaded[name] = original_dependency_loaded[name]
+end
 
 describe("GrimmoryAPI", function()
     describe("getBooks", function()

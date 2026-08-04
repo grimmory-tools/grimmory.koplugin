@@ -1,4 +1,17 @@
 package.path = "grimmory.koplugin/?.lua;" .. package.path
+local spy = require("luassert.spy")
+
+local preload_names = {
+    "grimmory/logger", "gettext", "pluginloader", "datastorage",
+    "grimmory/plugin_metadata",
+}
+local original_preload = {}
+local original_loaded = {}
+for _, name in ipairs(preload_names) do
+    original_preload[name] = package.preload[name]
+    original_loaded[name] = package.loaded[name]
+    package.loaded[name] = nil
+end
 
 local fake_logger = {
     err = spy.new(function() end),
@@ -36,10 +49,16 @@ local fake_package_meta = {}
 
 local GrimmoryPluginMetadata = require("grimmory/plugin_metadata")
 
+for _, name in ipairs(preload_names) do
+    package.preload[name] = original_preload[name]
+    package.loaded[name] = original_loaded[name]
+end
+
 describe("GrimmoryPluginMetadata", function()
     local original_get_meta = nil
 
     before_each(function()
+        fake_package_meta = {}
         original_get_meta = GrimmoryPluginMetadata.getMeta
 
         GrimmoryPluginMetadata.getMeta = function()
