@@ -1,5 +1,10 @@
 # grimmory.koplugin
 
+> [!CAUTION]
+> This is a personal fork of the awesome [grimmory.koplugin](https://github.com/grimmory-tools/grimmory.koplugin).
+> If you don't know what this is you're in the wrong place and shouldn't be using this.
+> Instead use the normal plugin from the linked repo above.
+
 > [!WARNING]
 > This is ALPHA software and WILL have bugs or other inadvertent behaviors.
 > 
