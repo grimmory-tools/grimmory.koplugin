@@ -200,6 +200,40 @@ describe("GrimmoryCFIResolver", function()
                 actual
             )
         end)
+
+        it("skips empty text nodes when indexing text()", function()
+            fake_document.getDocumentFileContent = spy.new(function() return [[CDATA
+<html><head></head><body><div><p><span epub:type="pagebreak"/>first real<span/>second real</p></div></body></html>
+            ]] end)
+
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/2/5)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/div/p/text()[2]",
+                actual
+            )
+        end)
+
+        it("indexes the only non-empty text node as the first", function()
+            fake_document.getDocumentFileContent = spy.new(function() return [[CDATA
+<html><head></head><body><div><p><span epub:type="pagebreak"/><span/>only real</p></div></body></html>
+            ]] end)
+
+            local cfi_resolver = GrimmoryCFIResolver:new(fake_document)
+
+            local actual = cfi_resolver:cfiToXpointer(
+                "epubcfi(/6/24!/4/2/2/5)"
+            )
+
+            assert.are.equal(
+                "/body/DocFragment[12]/body/div/p/text()",
+                actual
+            )
+        end)
     end)
 
     describe("xpointerToCFI", function()
