@@ -546,6 +546,7 @@ function GrimmoryAPI:getShelves()
 end
 
 ---@param book_id number
+---@param book_type string
 ---@param start_time number
 ---@param end_time number
 ---@param start_progress number
@@ -554,6 +555,7 @@ end
 ---@param end_location string
 function GrimmoryAPI:recordSession(
     book_id,
+    book_type,
     start_time,
     end_time,
     start_progress,
@@ -563,8 +565,6 @@ function GrimmoryAPI:recordSession(
 )
     local duration_seconds = end_time - start_time
     local progress_delta = math.max(0, end_progress - start_progress)
-
-    local book_type = "EPUB"
 
     local request = {
         bookId = book_id,
