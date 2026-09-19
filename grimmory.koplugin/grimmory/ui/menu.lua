@@ -230,7 +230,7 @@ function GrimmoryMenu:getDownloadOptionsMenu()
                     if count == 0 then
                         targetDescription = shelf.name
                     else
-                        targetDescription = targetShelves .. ", " .. shelf.name
+                        targetDescription = targetDescription .. ", " .. shelf.name
                     end
                     count = count + 1
                 end
