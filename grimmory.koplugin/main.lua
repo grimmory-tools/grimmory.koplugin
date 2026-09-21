@@ -476,6 +476,8 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
         local last_progress_step = 0
         local session_count = 0
         local session_error_count = 0
+        local session_unlinked_count = 0
+        local book_linked_count = 0
         local book_download_count = 0
         local book_refresh_count = 0
         local book_error_count = 0
@@ -548,6 +550,10 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
                     session_count = session_count + 1
                 elseif progress.state == "session-error" then
                     session_error_count = session_error_count + 1
+                elseif progress.state == "session-unlinked" then
+                    session_unlinked_count = session_unlinked_count + 1
+                elseif progress.state == "book-linked" then
+                    book_linked_count = book_linked_count + 1
                 elseif progress.state == "book-downloaded" then
                     book_download_count = book_download_count + 1
 
@@ -631,6 +637,17 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
 
             if session_error_count > 0 then
                 table.insert(message, T(_("%1 session(s) failed"), session_error_count))
+            end
+
+            if session_unlinked_count > 0 then
+                table.insert(message, T(
+                    _("%1 book(s) have reading activity but aren't linked to Grimmory yet"),
+                    session_unlinked_count
+                ))
+            end
+
+            if book_linked_count > 0 then
+                table.insert(message, T(_("%1 book(s) linked to Grimmory"), book_linked_count))
             end
 
             if book_download_count > 0 then

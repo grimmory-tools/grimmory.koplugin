@@ -6,6 +6,20 @@ local GrimmoryLogger = require("grimmory/logger")
 
 local logger = GrimmoryLogger:new()
 
+---@param book_path string
+---@return string book_type
+local function getBookType(book_path)
+    local extension = util.getFileNameSuffix(book_path)
+
+    if extension == nil or extension == "" then
+        -- Fall back to the previous hardcoded default when the
+        -- extension can't be determined.
+        return "EPUB"
+    end
+
+    return extension:upper()
+end
+
 ---@class GrimmorySynchronize
 ---@field repository GrimmoryLocalRepository
 ---@field reading_annotations GrimmoryReadingAnnotations
@@ -85,6 +99,20 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
 
     local sessions = self.repository:getPendingSessions(book_id)
 
+    if #sessions > 0 and sessions[1].grimmory_id == nil then
+        -- The book has reading activity but hasn't been linked to a
+        -- Grimmory catalog entry yet, so there's nowhere to record these
+        -- sessions against. This isn't a transient failure - retrying
+        -- won't help until the book gets linked (see associateUnlinkedBooks) -
+        -- so report it once instead of failing every pending session below.
+        logger:info("Skipping session sync, book is not linked to Grimmory:", book_id)
+        callback({
+            state = "session-unlinked",
+            bookPath = sessions[1].book_path,
+        })
+        return
+    end
+
     for _, session in ipairs(sessions) do
         local total_seconds = session.end_time - session.start_time
         local total_pages = session.end_page - session.start_page + 1
@@ -105,16 +133,6 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
                 since = session.end_time,
             })
 
-        elseif session.grimmory_id == nil then
-            logger:err("Session failed recording with error for book: ", book_id, " - ", "No Grimmory ID")
-            callback({
-                state = "session-error",
-                bookPath = session.book_path,
-            })
-
-            -- If an error happens for this session we bail early so
-            -- retries can happen again later
-            break
         else
             logger:dbg(
                 "Recording session",
@@ -130,6 +148,7 @@ function GrimmorySynchronize:pushBookSessions(book_id, callback)
 
             local ok, body = self.api:recordSession(
                 session.grimmory_id,
+                getBookType(session.book_path),
                 session.start_time,
                 session.end_time,
                 session.start_progress,
@@ -237,6 +256,16 @@ function GrimmorySynchronize:pushBookMetadata(book_id, callback)
 end
 
 function GrimmorySynchronize:pushAllPendingBookMetadata(callback)
+    -- Books with reading activity that were never linked to a Grimmory
+    -- catalog entry (e.g. downloaded outside of this plugin) would
+    -- otherwise never be picked up by getBooksPendingSync below, since
+    -- it requires a grimmory_id to already be present.
+    --
+    -- This is pcall'd for the same reason pushBookMetadata is below: a
+    -- failure linking one book (or reaching the catalog at all) shouldn't
+    -- abort syncing progress/sessions for every other already-linked book.
+    pcall(self.associateUnlinkedBooks, self, callback)
+
     local book_ids = self.repository:getBooksPendingSync(
         self.settings:getSyncReadingSessions(),
         self.settings:getSyncReadingProgress()
@@ -484,6 +513,18 @@ function GrimmorySynchronize:downloadBook(book_id, download_path)
 end
 
 ---@param book Book
+---@return string | nil book_path a known local file that is this book, if any
+function GrimmorySynchronize:findLocalBookMatch(book)
+    for _, local_book in ipairs(self.repository:getUnlinkedBooks()) do
+        if util.fileExists(local_book.book_path) and self.doc_metadata:isBook(local_book.book_path, book) then
+            return local_book.book_path
+        end
+    end
+
+    return nil
+end
+
+---@param book Book
 ---@return string download_path
 function GrimmorySynchronize:getBookDownloadPath(book)
     local existing_book_ok, existing_books = self.repository:findBooksByGrimmoryId(book.id)
@@ -496,6 +537,15 @@ function GrimmorySynchronize:getBookDownloadPath(book)
                 return local_book.book_path
             end
         end
+    end
+
+    -- Before downloading a fresh copy, check whether a file we already
+    -- know about (but haven't linked to this book yet) is actually the
+    -- same book under a different path/filename - e.g. downloaded via
+    -- OPDS, or copied over manually before this plugin was installed.
+    local local_match = self:findLocalBookMatch(book)
+    if local_match ~= nil then
+        return local_match
     end
 
     local download_directory = self.settings:getDownloadDirectory()
@@ -607,6 +657,58 @@ function GrimmorySynchronize:associateBook(book_path)
     end
 
     return nil
+end
+
+---@param callback function
+function GrimmorySynchronize:associateUnlinkedBooks(callback)
+    local unlinked_books = self.repository:getUnlinkedBooksWithEvents()
+
+    if #unlinked_books == 0 then
+        return
+    end
+
+    logger:info("Attempting to link", #unlinked_books, "book(s) with reading activity to Grimmory")
+
+    -- Walk the remote catalog a page at a time (via the getBooks iterator)
+    -- and check it against whatever local books are still unmatched,
+    -- rather than loading the whole catalog into memory at once - this can
+    -- otherwise be sizeable, and devices running this plugin are often
+    -- memory-constrained. `remaining` shrinks as books get linked, so we
+    -- can stop as soon as everything's matched without reading the rest
+    -- of the catalog.
+    local remaining = {}
+    for _, unlinked_book in ipairs(unlinked_books) do
+        table.insert(remaining, unlinked_book)
+    end
+
+    for book in self.api:getBooks() do
+        for index = #remaining, 1, -1 do
+            local unlinked_book = remaining[index]
+
+            if self.doc_metadata:isBook(unlinked_book.book_path, book) then
+                local ok = self.repository:upsertBook(unlinked_book.book_path, book.id)
+
+                if ok then
+                    logger:info("Linked book to Grimmory:", unlinked_book.book_path, "-", book.id)
+
+                    callback({
+                        state = "book-linked",
+                        book_id = unlinked_book.id,
+                        book_path = unlinked_book.book_path,
+                        grimmory_id = book.id,
+                    })
+                else
+                    logger:err("Failed to write book association:", unlinked_book.book_path)
+                end
+
+                table.remove(remaining, index)
+            end
+        end
+
+        if #remaining == 0 then
+            break
+        end
+    end
 end
 
 ---@param book_path string
