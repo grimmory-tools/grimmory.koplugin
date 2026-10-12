@@ -2,6 +2,7 @@ local ffiutil = require("ffi/util")
 local ffi = require("ffi")
 local json = require("json")
 local Device = require("device")
+local Event = require("ui/event")
 local NetworkManager = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 
@@ -114,91 +115,184 @@ local function wrap_coroutine(func)
     return coroutine.resume(co)
 end
 
----@return bool enabled_wifi
----@return bool connected
-local function enable_wifi(timeout)
-    if timeout == nil then
-        timeout = 45
-    end
+-- Waiting for a connection, in seconds.  KOReader's own background WiFi
+-- restore can take over 45 seconds, so allow a bit more.
+local WIFI_CONNECT_TIMEOUT = 60
+-- How long a background (non-blocking) connection may take before falling
+-- back to KOReader's regular, blocking connection.
+local WIFI_BACKGROUND_CONNECT_TIMEOUT = 30
 
-    if NetworkManager:isWifiOn() and NetworkManager:isConnected() then
-        logger:dbg("WiFi is already Active")
-        return false, true
-    end
+-- WiFi state shared by every executor (the FileManager and each ReaderUI get
+-- their own plugin instance), so a sync that finishes never turns off WiFi
+-- that another sync (e.g. the progress check of the next book) still uses.
+local wifi_users = 0
+local wifi_enabled_by_us = false
 
-    if not Device:hasWifiToggle() then
-        -- Clean up standby before continuing.
-        logger:err("Requested with wifi but cannot enable")
-        return false, NetworkManager:isConnected()
+local function is_wifi_connected()
+    return NetworkManager:isWifiOn() and NetworkManager:isConnected()
+end
+
+local function is_wifi_connecting()
+    -- Internal NetworkManager flags, set while KOReader (or another plugin)
+    -- is connecting, e.g. while restoring WiFi after resume.
+    return NetworkManager.pending_connection or NetworkManager.pending_connectivity_check
+end
+
+--- Yield the running coroutine until `is_done()` returns true or `timeout`
+--- seconds passed, without blocking the UI.
+---@return boolean done
+local function wait_until(is_done, timeout)
+    if is_done() then
+        return true
     end
 
     local running_coroutine = coroutine.running()
-    local connectivity_result = nil
+    local result = nil
+    local iteration = 0
 
-    local check_connectivity
-    check_connectivity = function(iteration)
-        if iteration == nil then
-            iteration = 0
-        end
-
-        if iteration > timeout * 4 then
-            logger:dbg("Aborted connection check waiting")
-            connectivity_result = false
-            coroutine.resume(running_coroutine)
+    local function check()
+        if is_done() then
+            result = true
+        elseif iteration >= timeout * 4 then
+            result = false
+        else
+            iteration = iteration + 1
+            UIManager:scheduleIn(0.25, check)
             return
         end
 
-        if not NetworkManager:isConnected() then
-            UIManager:scheduleIn(0.25, check_connectivity, iteration + 1)
-        else
-            logger:dbg("Connection succesful")
-            connectivity_result = true
-            coroutine.resume(running_coroutine)
+        coroutine.resume(running_coroutine)
+    end
+
+    UIManager:scheduleIn(0.25, check)
+
+    -- Give control back to UIManager
+    coroutine.yield()
+
+    return result == true
+end
+
+--- Connect to WiFi, turning it on if needed.  Must run inside a coroutine.
+---@return boolean connected
+local function connect_wifi()
+    if is_wifi_connected() then
+        logger:dbg("WiFi is already Active")
+        return true
+    end
+
+    if not Device:hasWifiToggle() then
+        logger:err("Requested with wifi but cannot enable")
+        return NetworkManager:isConnected()
+    end
+
+    if is_wifi_connecting() then
+        logger:dbg("WiFi connection attempt already ongoing, waiting for it")
+
+        if wait_until(is_wifi_connected, WIFI_CONNECT_TIMEOUT) then
+            return true
+        end
+
+        if is_wifi_connecting() then
+            logger:err("Ongoing WiFi connection attempt did not finish")
+            return false
         end
     end
 
-    -- If the wifi is not connected then we need to wait
-    -- for a connection and don't want to block while we do it.
-    logger:dbg("Connecting to WiFi")
-
-    local wifi_needs_disable = false
-
+    -- Only turn WiFi off afterwards if it was off before.
     if not NetworkManager:isWifiOn() then
-        -- Use `enableWifi` rather than `requestToTurnOnWifi`: only its
-        -- connectivity check clears NetworkManager's `pending_connection`
-        -- flag (and broadcasts NetworkConnected).  Without it every later
-        -- attempt is rejected with EBUSY and WiFi is never turned on again.
+        wifi_enabled_by_us = true
+    end
+
+    if Device:hasWifiRestore() then
+        -- Connect in the background, like KOReader does when restoring WiFi
+        -- after resume.  `enableWifi` scans for networks and waits for the
+        -- association on the UI thread, which freezes the reader for several
+        -- seconds when a book is opened or closed.
+        logger:dbg("Connecting to WiFi in the background")
+
+        NetworkManager.pending_connection = true
+        UIManager:broadcastEvent(Event:new("NetworkConnecting"))
+
+        local restore_ok, restore_error = pcall(NetworkManager.restoreWifiAsync, NetworkManager)
+        if not restore_ok then
+            logger:err("Background WiFi connection failed to start:", restore_error)
+        end
+
+        local connected = restore_ok and wait_until(is_wifi_connected, WIFI_BACKGROUND_CONNECT_TIMEOUT)
+        NetworkManager.pending_connection = false
+
+        if connected then
+            logger:dbg("Connection succesful")
+            UIManager:broadcastEvent(Event:new("NetworkConnected"))
+            return true
+        end
+
+        -- e.g. the network is only known to KOReader, not to the system.
+        logger:warn("Background WiFi connection failed, trying a regular connection")
+    end
+
+    -- PocketBook's NetConnect is synchronous: when it returns without a link,
+    -- the attempt failed (it sometimes does, e.g. right after wake-up), so
+    -- it is worth a second try.  Elsewhere the result is only known later.
+    local attempts = Device:isPocketBook() and 2 or 1
+
+    for attempt = 1, attempts do
+        -- Turning WiFi on below blocks the UI (scanning, PocketBook's
+        -- NetConnect), so paint the opened book / file manager and our
+        -- notification first instead of freezing on the previous screen.
+        UIManager:forceRePaint()
+
+        -- `enableWifi` (not `requestToTurnOnWifi`) so KOReader's connectivity
+        -- check runs: only it clears `pending_connection` again and broadcasts
+        -- NetworkConnected.  Non-interactive, so no network list is shown.
         local result = NetworkManager:enableWifi(nil, false)
 
-        -- Explicit `false` means turning on wifi failed, and
-        -- `enableWifi` has already torn the attempt down.
         if result == false then
-            logger:err("Failed to turn on wifi")
-            return false, false
-        end
-
-        -- `nil` means another connection attempt (e.g. WiFi restore after
-        -- resume) is ongoing: wait for it, but don't turn off WiFi we didn't
-        -- turn on.
-        if result == nil then
-            logger:dbg("WiFi connection attempt already ongoing, waiting for it")
+            -- `enableWifi` has already torn the attempt down.
+            logger:err("Failed to turn on wifi, attempt", attempt)
+        elseif Device:isPocketBook() and not NetworkManager:isWifiOn() then
+            logger:err("PocketBook NetConnect failed, attempt", attempt)
+            -- Stop KOReader's pending connectivity check, otherwise the next
+            -- attempt is rejected as busy for the next 45 seconds.
+            pcall(NetworkManager._abortWifiConnection, NetworkManager)
         else
-            wifi_needs_disable = true
+            -- Stop waiting early once KOReader gave up on the connection.
+            local function is_done()
+                return is_wifi_connected() or not is_wifi_connecting()
+            end
+
+            wait_until(is_done, WIFI_CONNECT_TIMEOUT)
+
+            if is_wifi_connected() then
+                logger:dbg("Connection succesful")
+                return true
+            end
+
+            logger:err("No connection after turning on wifi, attempt", attempt)
+        end
+
+        if attempt < attempts then
+            -- Give the system a moment before trying again.
+            wait_until(function() return false end, 2)
         end
     end
 
-    -- Start connectivity checking
-    UIManager:scheduleIn(0.25, check_connectivity, 0)
+    return false
+end
 
-    -- If we somehow blocked we will never resume - so don't even try
-    if connectivity_result == nil then
-        -- Give control back to UIManager
-        logger:dbg("Waiting...")
-        coroutine.yield()
+local function release_wifi()
+    wifi_users = math.max(0, wifi_users - 1)
+
+    if wifi_users == 0 and wifi_enabled_by_us then
+        wifi_enabled_by_us = false
+
+        logger:dbg("Disabling WiFi after execution")
+        -- `disableWifi` cancels any pending connectivity check and
+        -- broadcasts NetworkDisconnected.  Flagged interactive so
+        -- `wifi_was_on` is reset and KOReader does not restore the
+        -- WiFi we only turned on for this sync after resume / restart.
+        NetworkManager:disableWifi(nil, true)
     end
-
-    logger:dbg("Continuing after wifi")
-    return wifi_needs_disable, connectivity_result == true
 end
 
 ---@alias GrimmoryRunnableProgressCallback function(state: any, terminate: function): bool
@@ -227,28 +321,26 @@ function GrimmoryExecutor:background(callback, with_wifi)
 
             -- We want the executor to attempt to connect to wifi before it runs
             -- anything, and if it turns this on we should disable it afterwards, too.
-            local wifi_needs_disable = false
+            local uses_wifi = false
 
             local function finish()
                 UIManager:allowStandby()
 
-                -- If wifi was enabled, disable it again
-                if wifi_needs_disable then
-                    logger:dbg("Disabling WiFi after execution")
-                    -- `disableWifi` cancels any pending connectivity check and
-                    -- broadcasts NetworkDisconnected.  Flagged interactive so
-                    -- `wifi_was_on` is reset and KOReader does not restore the
-                    -- WiFi we only turned on for this sync after resume / restart.
-                    NetworkManager:disableWifi(nil, true)
+                if uses_wifi then
+                    uses_wifi = false
+                    release_wifi()
                 end
             end
 
             if with_wifi then
                 logger:dbg("Execution requested WiFi")
-                local wifi_connected
-                wifi_needs_disable, wifi_connected = enable_wifi()
 
-                if not wifi_connected then
+                -- Register before connecting, so a sync finishing meanwhile
+                -- does not turn WiFi off underneath this one.
+                wifi_users = wifi_users + 1
+                uses_wifi = true
+
+                if not connect_wifi() then
                     logger:err("No connectivity after trying to enable WiFi")
                     finish()
                     return false, "No connectivity"
