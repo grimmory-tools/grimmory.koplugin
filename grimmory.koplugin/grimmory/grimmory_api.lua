@@ -93,6 +93,7 @@ end
 ---@field id number
 ---@field library_id number | nil
 ---@field library_name string | nil
+---@field read_status string | nil
 ---@field added_on number
 ---@field shelves number[]
 ---@field metadata BookMetadata
@@ -143,6 +144,7 @@ local function parse_book(book)
         id = from_json_number(book.id),
         library_id = from_json_number(book["libraryId"]),
         library_name = from_json_string(book["libraryName"]),
+        read_status = type(book.readStatus) == "string" and book.readStatus or nil,
         added_on = from_json_iso8601(book["addedOn"]),
         shelves = shelves,
         metadata = metadata,
@@ -449,6 +451,18 @@ function GrimmoryAPI:getBooksPage(page_number)
     end
 
     return ok, books, total_count
+end
+
+---@param book_id number
+---@return boolean ok
+---@return Book | nil book
+function GrimmoryAPI:getBook(book_id)
+    local ok, _, body = self:request("GET", "/api/v1/books/" .. tostring(book_id))
+    if not ok or type(body) ~= "table" or from_json_number(body.id) ~= book_id then
+        logger:err("Could not get book:", book_id, body)
+        return false, nil
+    end
+    return true, parse_book(body)
 end
 
 ---@return (fun(): (Book | nil, integer, integer))

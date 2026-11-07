@@ -90,6 +90,51 @@ for _, name in ipairs(dependency_names) do
 end
 
 describe("GrimmoryAPI", function()
+    describe("getBook", function()
+        it("parses Read status from a single book", function()
+            local api = GrimmoryAPI:new()
+            api.request = function(_, method, path)
+                assert.equals("GET", method)
+                assert.equals("/api/v1/books/7", path)
+                return true, 200, { id = 7, readStatus = "READ" }
+            end
+            local ok, book = api:getBook(7)
+            assert.is_true(ok)
+            assert.equals("READ", book.read_status)
+        end)
+
+        it("ignores missing and non-string null statuses", function()
+            for _, raw in ipairs({ { id = 7 }, { id = 7, readStatus = {} } }) do
+                local api = GrimmoryAPI:new()
+                api.request = function() return true, 200, raw end
+                local ok, book = api:getBook(7)
+                assert.is_true(ok)
+                assert.is_nil(book.read_status)
+            end
+        end)
+
+        it("rejects failed or malformed book responses", function()
+            for _, response in ipairs({ "error", {}, { id = 8 } }) do
+                local api = GrimmoryAPI:new()
+                api.request = function() return true, 200, response end
+                assert.is_false(api:getBook(7))
+            end
+            local api = GrimmoryAPI:new()
+            api.request = function() return false, 500, {} end
+            assert.is_false(api:getBook(7))
+        end)
+
+        it("also parses status in paged books", function()
+            local api = GrimmoryAPI:new()
+            api.request = function()
+                return true, 200, { content = { { id = 7, readStatus = "READ" } } }
+            end
+            local ok, books = api:getBooksPage(0)
+            assert.is_true(ok)
+            assert.equals("READ", books[1].read_status)
+        end)
+    end)
+
     describe("getBooks", function()
         it("parses library fields from paged books", function()
             local api = GrimmoryAPI:new()

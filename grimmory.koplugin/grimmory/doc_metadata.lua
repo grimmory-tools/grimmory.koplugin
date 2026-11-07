@@ -1,6 +1,7 @@
 local Cache = require("cache")
 local DocSettings = require("docsettings")
 local DocumentRegistry = require("document/documentregistry")
+local BookList = require("ui/widget/booklist")
 local util = require("util")
 
 local GrimmoryLogger = require("grimmory/logger")
@@ -179,6 +180,39 @@ end
 ---@param path string
 function DocMetadata:clearProgress(path)
     self:setProgress(path, nil, nil, nil)
+end
+
+local function setReadStatusSummary(settings, status)
+    if status ~= "complete" and status ~= "reading" and status ~= "abandoned" then
+        return false
+    end
+    local summary = settings:readSetting("summary") or {}
+    if summary.status == status then
+        return false
+    end
+    summary.status = status
+    summary.modified = os.date("%Y-%m-%d", os.time())
+    settings:saveSetting("summary", summary)
+    return true
+end
+
+-- Mirror background status changes without flushing stale parent document data.
+function DocMetadata:updateActiveBookReadStatus(path, status)
+    if self.ui and self.ui.document and self.ui.document.file == path and self.ui.doc_settings then
+        return setReadStatusSummary(self.ui.doc_settings, status)
+    end
+    return false
+end
+
+-- A reading status is independent of the last reading position.
+function DocMetadata:setBookReadStatus(path, status)
+    local settings = self:getDocSettings(path)
+    if not setReadStatusSummary(settings, status) then
+        return false
+    end
+    settings:flush()
+    BookList.setBookInfoCacheProperty(path, "status", status)
+    return true
 end
 
 ---@param path string

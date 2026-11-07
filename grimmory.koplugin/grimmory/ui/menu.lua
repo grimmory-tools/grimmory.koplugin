@@ -191,6 +191,17 @@ function GrimmoryMenu:getSyncOptionsMenu()
             separator = true,
         },
         {
+            text = _("Sync Book Read Status"),
+            checked_func = function()
+                return self.settings:getSyncBookReadStatus()
+            end,
+            callback = function()
+                self.settings:toggleSyncBookReadStatus()
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+            separator = true,
+        },
+        {
             text = _("Sync Reading Progress"),
             checked_func = function()
                 return self.settings:getSyncReadingProgress()

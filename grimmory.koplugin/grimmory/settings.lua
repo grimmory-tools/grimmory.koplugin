@@ -41,6 +41,7 @@ local logger = GrimmoryLogger:new()
 ---@field sync_download_directory string
 ---@field sync_reading_sessions boolean
 ---@field sync_reading_progress boolean
+---@field sync_book_read_status boolean
 ---@field sync_annotations boolean
 ---@field sync_shelves_as_collections boolean
 ---@field sync_retain_empty_shelves boolean
@@ -69,6 +70,7 @@ local DEFAULTS = {
     sync_download_directory = "grimmory/",
     sync_reading_sessions = true,
     sync_reading_progress = true,
+    sync_book_read_status = true,
     sync_annotations = true,
     sync_shelves_as_collections = true,
     sync_retain_empty_shelves = false,
@@ -272,6 +274,18 @@ function GrimmorySettings:getSyncReadingProgress()
     end
 
     return self.data.sync_reading_progress
+end
+
+function GrimmorySettings:getSyncBookReadStatus()
+    if self.data.sync_book_read_status == nil then
+        return DEFAULTS.sync_book_read_status
+    end
+    return self.data.sync_book_read_status
+end
+
+function GrimmorySettings:toggleSyncBookReadStatus()
+    self.data.sync_book_read_status = not self:getSyncBookReadStatus()
+    self:write()
 end
 
 function GrimmorySettings:toggleSyncReadingProgress()
