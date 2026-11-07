@@ -90,6 +90,7 @@ end
 ---@field filename string
 
 ---@class Book
+---@field read_status string | nil
 ---@field id number
 ---@field added_on number
 ---@field shelves number[]
@@ -108,6 +109,9 @@ end
 ---@field color string
 ---@field style string
 
+---Normalize a Grimmory book DTO, including its optional per-user reading status.
+---@param book table Raw book response
+---@return Book parsed_book
 local function parse_book(book)
     local shelves = {}
 
@@ -139,6 +143,7 @@ local function parse_book(book)
 
     return {
         id = from_json_number(book.id),
+        read_status = type(book.readStatus) == "string" and book.readStatus or nil,
         added_on = from_json_iso8601(book["addedOn"]),
         shelves = shelves,
         metadata = metadata,
@@ -445,6 +450,19 @@ function GrimmoryAPI:getBooksPage(page_number)
     end
 
     return ok, books, total_count
+end
+
+---Fetch a book and its current per-user reading status.
+---@param book_id number Grimmory book identifier
+---@return boolean ok Whether a valid matching book was returned
+---@return Book | nil book Parsed book, or nil on request/response failure
+function GrimmoryAPI:getBook(book_id)
+    local ok, _, body = self:request("GET", "/api/v1/books/" .. tostring(book_id))
+    if not ok or type(body) ~= "table" or from_json_number(body.id) ~= book_id then
+        logger:err("Could not get book:", book_id, body)
+        return false, nil
+    end
+    return true, parse_book(body)
 end
 
 ---@return (fun(): (Book | nil, integer, integer))

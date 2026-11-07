@@ -1,6 +1,7 @@
 local Cache = require("cache")
 local DocSettings = require("docsettings")
 local DocumentRegistry = require("document/documentregistry")
+local BookList = require("ui/widget/booklist")
 local util = require("util")
 
 local GrimmoryLogger = require("grimmory/logger")
@@ -197,6 +198,49 @@ function DocMetadata:clearProgress(path)
     settings:delSetting("last_page")
 
     settings:flush()
+end
+
+---Update only the summary status and modification date, retaining all other fields.
+---@param settings table Document settings handle
+---@param status string KOReader status: complete, reading, or abandoned
+---@return boolean changed
+local function setReadStatusSummary(settings, status)
+    if status ~= "complete" and status ~= "reading" and status ~= "abandoned" then
+        return false
+    end
+    local summary = settings:readSetting("summary") or {}
+    if summary.status == status then
+        return false
+    end
+    summary.status = status
+    summary.modified = os.date("%Y-%m-%d", os.time())
+    settings:saveSetting("summary", summary)
+    return true
+end
+
+-- Mirror background status changes without flushing stale parent document data.
+---@param path string Book path updated by the background sync
+---@param status string Mapped KOReader status
+---@return boolean changed Whether the active document summary changed
+function DocMetadata:updateActiveBookReadStatus(path, status)
+    if self.ui and self.ui.document and self.ui.document.file == path and self.ui.doc_settings then
+        return setReadStatusSummary(self.ui.doc_settings, status)
+    end
+    return false
+end
+
+-- A reading status is independent of the last reading position.
+---@param path string Book path whose sidecar should be updated
+---@param status string KOReader status: complete, reading, or abandoned
+---@return boolean changed Whether a changed summary was persisted
+function DocMetadata:setBookReadStatus(path, status)
+    local settings = self:getDocSettings(path)
+    if not setReadStatusSummary(settings, status) then
+        return false
+    end
+    settings:flush()
+    BookList.setBookInfoCacheProperty(path, "status", status)
+    return true
 end
 
 ---@param path string

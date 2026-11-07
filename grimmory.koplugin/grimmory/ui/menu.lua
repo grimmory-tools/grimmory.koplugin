@@ -144,6 +144,8 @@ function GrimmoryMenu:getAutomaticSyncOptionsMenu()
     }
 end
 
+---Build the independent metadata synchronization options, including remote book status.
+---@return table menu_items KOReader menu entries
 function GrimmoryMenu:getSyncOptionsMenu()
     return {
         {
@@ -170,6 +172,17 @@ function GrimmoryMenu:getSyncOptionsMenu()
             end,
             callback = function()
                 self.settings:toggleSyncAnnotations()
+                UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
+            end,
+            separator = true,
+        },
+        {
+            text = _("Sync Book Read Status"),
+            checked_func = function()
+                return self.settings:getSyncBookReadStatus()
+            end,
+            callback = function()
+                self.settings:toggleSyncBookReadStatus()
                 UIManager:broadcastEvent(Event:new("GrimmorySettingsChanged"))
             end,
             separator = true,

@@ -1,0 +1,138 @@
+local assert = require 'luassert'
+local spy = require 'luassert.spy'
+
+package.path = "grimmory.koplugin/?.lua;" .. package.path
+
+local original_plugin_metadata_preload = package.preload["grimmory/plugin_metadata"]
+local original_plugin_metadata_loaded = package.loaded["grimmory/plugin_metadata"]
+local original_gettext_preload = package.preload["gettext"]
+local original_gettext_loaded = package.loaded["gettext"]
+local original_logger_preload = package.preload["grimmory/logger"]
+local original_logger_loaded = package.loaded["grimmory/logger"]
+local original_api_loaded = package.loaded["grimmory/grimmory_api"]
+local dependency_names = { "socket.http", "ssl.https", "json", "ltn12" }
+local original_dependency_preload = {}
+local original_dependency_loaded = {}
+for _, name in ipairs(dependency_names) do
+    original_dependency_preload[name] = package.preload[name]
+    original_dependency_loaded[name] = package.loaded[name]
+end
+
+package.preload["socket.http"] = function()
+    return {}
+end
+
+package.preload["ssl.https"] = function()
+    return {}
+end
+
+package.preload["json"] = function()
+    return {
+        encode = function() return "" end,
+        decode = function() return {} end,
+    }
+end
+
+package.preload["ltn12"] = function()
+    return {
+        source = {
+            string = function() return function() end end,
+        },
+        sink = {
+            table = function() return function() end end,
+            file = function() return function() end end,
+        },
+    }
+end
+
+package.preload["gettext"] = function()
+    return function(text) return text end
+end
+
+package.preload["grimmory/logger"] = function()
+    return {
+        new = function()
+            return {
+                err = spy.new(function() end),
+                warn = spy.new(function() end),
+                dbg = spy.new(function() end),
+            }
+        end
+    }
+end
+
+package.preload["grimmory/plugin_metadata"] = function()
+    return {
+        getVersion = function() return "0.0.0-test" end,
+        getRepository = function() return "test/repo" end,
+    }
+end
+
+package.loaded["grimmory/plugin_metadata"] = nil
+package.loaded["grimmory/logger"] = nil
+package.loaded["gettext"] = nil
+package.loaded["grimmory/grimmory_api"] = nil
+for _, name in ipairs(dependency_names) do
+    package.loaded[name] = nil
+end
+local GrimmoryAPI = require("grimmory/grimmory_api")
+
+package.preload["grimmory/plugin_metadata"] = original_plugin_metadata_preload
+package.loaded["grimmory/plugin_metadata"] = original_plugin_metadata_loaded
+package.preload["gettext"] = original_gettext_preload
+package.loaded["gettext"] = original_gettext_loaded
+package.preload["grimmory/logger"] = original_logger_preload
+package.loaded["grimmory/logger"] = original_logger_loaded
+package.loaded["grimmory/grimmory_api"] = original_api_loaded
+for _, name in ipairs(dependency_names) do
+    package.preload[name] = original_dependency_preload[name]
+    package.loaded[name] = original_dependency_loaded[name]
+end
+
+describe("GrimmoryAPI", function()
+    describe("getBook", function()
+        it("parses Read status from a single book", function()
+            local api = GrimmoryAPI:new()
+            api.request = function(_, method, path)
+                assert.equals("GET", method)
+                assert.equals("/api/v1/books/7", path)
+                return true, 200, { id = 7, readStatus = "READ" }
+            end
+            local ok, book = api:getBook(7)
+            assert.is_true(ok)
+            assert.equals("READ", book.read_status)
+        end)
+
+        it("ignores missing and non-string null statuses", function()
+            for _, raw in ipairs({ { id = 7 }, { id = 7, readStatus = {} } }) do
+                local api = GrimmoryAPI:new()
+                api.request = function() return true, 200, raw end
+                local ok, book = api:getBook(7)
+                assert.is_true(ok)
+                assert.is_nil(book.read_status)
+            end
+        end)
+
+        it("rejects failed or malformed book responses", function()
+            for _, response in ipairs({ "error", {}, { id = 8 } }) do
+                local api = GrimmoryAPI:new()
+                api.request = function() return true, 200, response end
+                assert.is_false(api:getBook(7))
+            end
+            local api = GrimmoryAPI:new()
+            api.request = function() return false, 500, {} end
+            assert.is_false(api:getBook(7))
+        end)
+
+        it("also parses status in paged books", function()
+            local api = GrimmoryAPI:new()
+            api.request = function()
+                return true, 200, { content = { { id = 7, readStatus = "READ" } } }
+            end
+            local ok, books = api:getBooksPage(0)
+            assert.is_true(ok)
+            assert.equals("READ", books[1].read_status)
+        end)
+    end)
+
+end)

@@ -12,6 +12,7 @@ local NetworkManager = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local Event = require("ui/event")
 local ReadCollection = require("readcollection")
+local BookList = require("ui/widget/booklist")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 
 local GrimmoryDocMetadata = require("grimmory/doc_metadata")
@@ -432,6 +433,11 @@ function Grimmory:refreshUI()
     self.ui:reloadDocument()
 end
 
+---Run synchronization and apply background metadata notifications to the active UI.
+---@param verbose boolean Whether to display progress and completion messages
+---@param book_path string | nil A single book to sync, or nil for the library
+---@param refresh_book boolean | nil Whether to refresh the single book's file
+---@return nil
 function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
     -- Tell everything to flush so we have data available for our sync
     UIManager:broadcastEvent(Event:new("FlushSettings"))
@@ -506,6 +512,12 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
             function(progress)
                 if type(progress) ~= "table" then
                     return
+                end
+
+                if progress.state == "book-status-updated" then
+                    self.doc_metadata:updateActiveBookReadStatus(progress.book_path, progress.status)
+                    BookList.setBookInfoCacheProperty(progress.book_path, "status", progress.status)
+                    UIManager:broadcastEvent(Event:new("InvalidateMetadataCache", progress.book_path))
                 end
 
                 if progress.state == "book-push-metadata" then

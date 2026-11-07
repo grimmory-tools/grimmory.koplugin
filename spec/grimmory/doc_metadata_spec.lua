@@ -37,6 +37,10 @@ package.preload["cache"] = function()
 end
 
 local fake_doc_settings = {}
+local status_cache_update = spy.new(function() end)
+package.preload["ui/widget/booklist"] = function()
+    return { setBookInfoCacheProperty = status_cache_update }
+end
 
 package.preload["docsettings"] = function()
     return {
@@ -61,6 +65,107 @@ end
 local GrimmoryDocMetadata = require("grimmory/doc_metadata")
 
 describe("GrimmoryDocMetadata", function()
+    describe("setBookReadStatus", function()
+        it("mirrors a background update in the active summary without flushing stale document data", function()
+            local data = { summary = { status = "reading", note = "keep", rating = 3 }, last_page = 12 }
+            local settings = {
+                readSetting = function(_, key) return data[key] end,
+                saveSetting = spy.new(function(_, key, value) data[key] = value end),
+                flush = spy.new(function() end),
+            }
+            local metadata = GrimmoryDocMetadata:new({
+                ui = { document = { file = "active.epub" }, doc_settings = settings },
+            })
+            assert.is_false(metadata:updateActiveBookReadStatus("other.epub", "abandoned"))
+            assert.spy(settings.saveSetting).was_not.called()
+            assert.is_true(metadata:updateActiveBookReadStatus("active.epub", "abandoned"))
+            assert.same({ status = "abandoned", note = "keep", rating = 3,
+                modified = os.date("%Y-%m-%d") }, data.summary)
+            assert.equals(12, data.last_page)
+            assert.spy(settings.saveSetting).was.called(1)
+            assert.spy(settings.flush).was_not.called()
+            assert.is_false(metadata:updateActiveBookReadStatus("active.epub", "abandoned"))
+            assert.spy(settings.saveSetting).was.called(1)
+        end)
+
+        it("preserves summary fields and reading position in the active document", function()
+            local data = {
+                summary = { status = "reading", rating = 4, note = "Keep this" },
+                percent_finished = 0.25, last_page = 42, last_xpointer = "position",
+            }
+            local settings = {
+                readSetting = function(_, key) return data[key] end,
+                saveSetting = spy.new(function(_, key, value) data[key] = value end),
+                flush = spy.new(function() end),
+            }
+            local metadata = GrimmoryDocMetadata:new({
+                ui = { document = { file = "active.epub" }, doc_settings = settings },
+            })
+            assert.is_true(metadata:setBookReadStatus("active.epub", "complete"))
+            assert.same({ status = "complete", rating = 4, note = "Keep this",
+                modified = os.date("%Y-%m-%d") }, data.summary)
+            assert.equals(0.25, data.percent_finished)
+            assert.equals(42, data.last_page)
+            assert.equals("position", data.last_xpointer)
+            assert.spy(settings.saveSetting).was.called(1)
+            assert.spy(settings.flush).was.called(1)
+            assert.spy(status_cache_update).was.called_with("active.epub", "status", "complete")
+            assert.is_false(metadata:setBookReadStatus("active.epub", "complete"))
+            assert.spy(settings.flush).was.called(1)
+        end)
+
+        it("creates a summary for an unopened book", function()
+            local settings = {
+                readSetting = function() return nil end,
+                saveSetting = spy.new(function() end),
+                flush = spy.new(function() end),
+            }
+            local metadata = GrimmoryDocMetadata:new()
+            metadata.getDocSettings = function(_, path)
+                assert.equals("new.epub", path)
+                return settings
+            end
+            assert.is_true(metadata:setBookReadStatus("new.epub", "complete"))
+            assert.spy(settings.saveSetting).was.called_with(settings, "summary", {
+                status = "complete", modified = os.date("%Y-%m-%d"),
+            })
+        end)
+
+        it("persists each supported status and caches it without changing reading position", function()
+            for _, status in ipairs({ "complete", "reading", "abandoned" }) do
+                local data = { summary = { status = "new", note = "keep", rating = 5 },
+                    percent_finished = 0.4, last_page = 10, last_xpointer = "keep-position" }
+                local settings = {
+                    readSetting = function(_, key) return data[key] end,
+                    saveSetting = spy.new(function(_, key, value) data[key] = value end),
+                    flush = spy.new(function() end),
+                }
+                local metadata = GrimmoryDocMetadata:new()
+                metadata.getDocSettings = function() return settings end
+                assert.is_true(metadata:setBookReadStatus("book.epub", status))
+                assert.same({ status = status, note = "keep", rating = 5,
+                    modified = os.date("%Y-%m-%d") }, data.summary)
+                assert.equals(0.4, data.percent_finished)
+                assert.equals(10, data.last_page)
+                assert.equals("keep-position", data.last_xpointer)
+                assert.spy(status_cache_update).was.called_with("book.epub", "status", status)
+                assert.is_false(metadata:setBookReadStatus("book.epub", status))
+                assert.spy(settings.flush).was.called(1)
+                assert.spy(settings.saveSetting).was.called(1)
+            end
+        end)
+
+        it("does not clear status for missing or unsupported target values", function()
+            local settings = { saveSetting = spy.new(function() end), flush = spy.new(function() end) }
+            local metadata = GrimmoryDocMetadata:new()
+            metadata.getDocSettings = function() return settings end
+            assert.is_false(metadata:setBookReadStatus("book.epub", nil))
+            assert.is_false(metadata:setBookReadStatus("book.epub", "new"))
+            assert.spy(settings.saveSetting).was_not.called()
+            assert.spy(settings.flush).was_not.called()
+        end)
+    end)
+
     before_each(function()
         fake_doc_settings["readSetting"] = stub:new({}, "readSetting")
         for key in pairs(fake_cache) do

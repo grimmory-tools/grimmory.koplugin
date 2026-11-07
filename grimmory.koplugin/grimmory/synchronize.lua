@@ -15,6 +15,15 @@ local logger = GrimmoryLogger:new()
 ---@field doc_metadata GrimmoryDocMetadata
 local GrimmorySynchronize = {}
 
+-- Progress uploads can only represent UNREAD, READING and READ on the server.
+local READ_STATUSES = {
+    READ = { status = "complete", preserve = true },
+    READING = { status = "reading" },
+    RE_READING = { status = "reading", preserve = true },
+    PAUSED = { status = "abandoned", preserve = true },
+    ABANDONED = { status = "abandoned", preserve = true },
+}
+
 function GrimmorySynchronize:new(o)
     o = o or {}
     setmetatable(o, self)
@@ -22,8 +31,63 @@ function GrimmorySynchronize:new(o)
     return o
 end
 
----@param book_id integer
----@param callback function
+---Apply a supported remote status and report changed metadata to the parent UI.
+---@param book_path string Existing local book path
+---@param book Book Remote book with its per-user reading status
+---@param callback function | nil Receives the changed path and mapped KOReader status
+---@return nil
+function GrimmorySynchronize:applyBookReadStatus(book_path, book, callback)
+    local mapping = READ_STATUSES[book.read_status]
+    if not self.settings:getSyncBookReadStatus() or not mapping then
+        return
+    end
+    if self.doc_metadata:setBookReadStatus(book_path, mapping.status) and callback then
+        callback({ state = "book-status-updated", book_path = book_path, status = mapping.status })
+    end
+end
+
+---Fetch and apply status without changing reading position or reversing the sync.
+---@param book_path string Existing local book path
+---@param grimmory_id number | nil Associated Grimmory identifier
+---@param callback function | nil Receives status-change events
+---@return boolean ok False if an enabled status lookup failed
+---@return string | nil read_status Original Grimmory status, if available
+function GrimmorySynchronize:pullBookReadStatus(book_path, grimmory_id, callback)
+    if not self.settings:getSyncBookReadStatus() or not grimmory_id then
+        return true, nil
+    end
+    local ok, book = self.api:getBook(grimmory_id)
+    if not ok or not book then
+        logger:err("Unable to retrieve book read status:", grimmory_id)
+        return false, nil
+    end
+    self:applyBookReadStatus(book_path, book, callback)
+    return true, book.read_status
+end
+
+---Update associated copies only when their current file still matches the tracked book.
+---@param book Book Remote book with its current status
+---@param callback function | nil Receives status-change events
+---@return nil
+function GrimmorySynchronize:pullKnownBookReadStatus(book, callback)
+    if not self.settings:getSyncBookReadStatus() or not READ_STATUSES[book.read_status] then
+        return
+    end
+    local ok, books = self.repository:findBooksByGrimmoryId(book.id)
+    if ok then
+        for _, local_book in ipairs(books) do
+            if util.fileExists(local_book.book_path)
+                and util.partialMD5(local_book.book_path) == local_book.book_md5 then
+                self:applyBookReadStatus(local_book.book_path, book, callback)
+            end
+        end
+    end
+end
+
+---Upload pending progress unless it would overwrite a protected remote status.
+---@param book_id integer Local repository book identifier
+---@param callback function Receives progress and status-change events
+---@return nil
 function GrimmorySynchronize:pushBookProgress(book_id, callback)
     if not self.settings:getSyncReadingProgress() then
         logger:info("Reading progress skipped because feature is disabled for:", book_id)
@@ -47,6 +111,20 @@ function GrimmorySynchronize:pushBookProgress(book_id, callback)
     if last_synced_at ~= nil and last_synced_at >= progress.end_time then
         logger:dbg("Book progress already synced, skipping:", book_id, "-", last_synced_at)
         return
+    end
+
+    if self.settings:getSyncBookReadStatus() then
+        if util.partialMD5(progress.book_path) ~= progress.book_md5 then
+            logger:err("Book file changed, deferring historical progress:", book_id)
+            return
+        end
+        local status_ok, read_status = self:pullBookReadStatus(progress.book_path, progress.grimmory_id, callback)
+        -- Progress uploads would overwrite these explicitly chosen remote statuses.
+        -- Keep the pending progress for a later retry if the status is unavailable.
+        local mapping = READ_STATUSES[read_status]
+        if not status_ok or (mapping and mapping.preserve) then
+            return
+        end
     end
 
     logger:info("Synchronizing reading progress for:", book_id, ";", last_synced_at, "->", progress.end_time)
@@ -688,10 +766,12 @@ function GrimmorySynchronize:refreshBook(book_path, book_id, grimmory_id)
     return true, book_id
 end
 
----@param book Book
----@return string download_path
----@return boolean is_downloaded
-function GrimmorySynchronize:pullBook(book)
+---Download or reuse a book, then synchronize its shelves, position, and status.
+---@param book Book Remote book to synchronize
+---@param callback function | nil Receives status-change events
+---@return string download_path Local path to the book
+---@return boolean is_downloaded Whether this sync downloaded the book
+function GrimmorySynchronize:pullBook(book, callback)
     local book_exists = false
     local is_downloaded = false
 
@@ -729,6 +809,7 @@ function GrimmorySynchronize:pullBook(book)
         -- to associated shelves and pull the book progress.
         self:associateWithShelves(download_path, book.shelves or {})
         self:pullBookProgress(download_path)
+        self:applyBookReadStatus(download_path, book, callback)
     end
 
     return download_path, is_downloaded
@@ -753,9 +834,17 @@ function GrimmorySynchronize:removeBook(book_path)
     self.doc_metadata:purge(book_path)
 end
 
+---Synchronize downloads, or just statuses of associated books when downloads are disabled.
+---@param callback function Receives download, metadata, and status-change events
+---@return nil
 function GrimmorySynchronize:pullBooks(callback)
     if not self.settings:getDownloadsBooks() then
         logger:info("Book download skipped because feature is disabled")
+        if self.settings:getSyncBookReadStatus() then
+            for book in self.api:getBooks() do
+                self:pullKnownBookReadStatus(book, callback)
+            end
+        end
         return
     end
 
@@ -777,6 +866,7 @@ function GrimmorySynchronize:pullBooks(callback)
     local seen_grimmory_ids = {}
 
     for book, element_count, total_books in self.api:getBooks() do
+        self:pullKnownBookReadStatus(book, callback)
         if self:isTargetBook(book) then
             seen_grimmory_ids[tostring(book.id)] = true
 
@@ -906,6 +996,11 @@ function GrimmorySynchronize:synchronizeAll(callback)
     logger:info("Done synchronizing")
 end
 
+---Synchronize one book and fetch its final status after any progress upload.
+---@param book_path string Local book path
+---@param refresh_book boolean Whether to replace the local file with the remote copy
+---@param callback function Receives synchronization progress and status-change events
+---@return nil
 function GrimmorySynchronize:synchronizeBook(book_path, refresh_book, callback)
     if not self:checkForHealthyServer() then
         error("Cannot connect to valid server")
@@ -965,6 +1060,8 @@ function GrimmorySynchronize:synchronizeBook(book_path, refresh_book, callback)
 
     -- Then, try to get progress
     self:pullBookProgress(book_path)
+    -- A progress upload may have completed the book on Grimmory.
+    self:pullBookReadStatus(book_path, grimmory_id, callback)
 
     logger:info("Done synchronizing book:", book_path)
 end
