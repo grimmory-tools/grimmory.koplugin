@@ -7,6 +7,16 @@ local util = require("util")
 local GrimmoryLogger = require("grimmory/logger")
 local logger = GrimmoryLogger:new()
 
+local function apply_dom_version(settings)
+    -- Hack to prevent us from getting a weird message from koreader
+    -- There may be another way but this seems to be the simplest
+    -- and we only set it if it's not already set.
+    settings:saveSetting(
+        "cre_dom_version",
+        settings:readSetting("cre_dom_version", 20200223)
+    )
+end
+
 ---@class GrimmoryDocMetadata
 ---@field private props_cache any
 ---@field private ui any
@@ -179,9 +189,21 @@ end
 
 ---@param path string
 function DocMetadata:clearProgress(path)
-    self:setProgress(path, nil, nil, nil)
+    local settings = self:getDocSettings(path)
+
+    apply_dom_version(settings)
+
+    settings:delSetting("percent_finished")
+    settings:delSetting("last_xpointer")
+    settings:delSetting("last_page")
+
+    settings:flush()
 end
 
+---Update only the summary status and modification date, retaining all other fields.
+---@param settings table Document settings handle
+---@param status string KOReader status: complete, reading, or abandoned
+---@return boolean changed
 local function setReadStatusSummary(settings, status)
     if status ~= "complete" and status ~= "reading" and status ~= "abandoned" then
         return false
@@ -197,6 +219,9 @@ local function setReadStatusSummary(settings, status)
 end
 
 -- Mirror background status changes without flushing stale parent document data.
+---@param path string Book path updated by the background sync
+---@param status string Mapped KOReader status
+---@return boolean changed Whether the active document summary changed
 function DocMetadata:updateActiveBookReadStatus(path, status)
     if self.ui and self.ui.document and self.ui.document.file == path and self.ui.doc_settings then
         return setReadStatusSummary(self.ui.doc_settings, status)
@@ -205,6 +230,9 @@ function DocMetadata:updateActiveBookReadStatus(path, status)
 end
 
 -- A reading status is independent of the last reading position.
+---@param path string Book path whose sidecar should be updated
+---@param status string KOReader status: complete, reading, or abandoned
+---@return boolean changed Whether a changed summary was persisted
 function DocMetadata:setBookReadStatus(path, status)
     local settings = self:getDocSettings(path)
     if not setReadStatusSummary(settings, status) then
@@ -222,30 +250,18 @@ end
 function DocMetadata:setProgress(path, percent, xpointer, page)
     local settings = self:getDocSettings(path)
 
-    -- Hack to prevent us from getting a weird message from koreader
-    -- There may be another way but this seems to be the simplest
-    -- and we only set it if it's not already set.
-    settings:readSetting(
-        "cre_dom_version",
-        settings:readSetting("cre_dom_version", 20200223)
-    )
+    apply_dom_version(settings)
 
     if percent ~= nil then
         settings:saveSetting("percent_finished", percent / 100)
-    else
-        settings:delSetting("percent_finished")
     end
 
     if xpointer ~= nil then
         settings:saveSetting("last_xpointer", xpointer)
-    else
-        settings:delSetting("last_xpointer")
     end
 
     if page ~= nil then
         settings:saveSetting("last_page", page)
-    else
-        settings:delSetting("last_page")
     end
 
     settings:flush()

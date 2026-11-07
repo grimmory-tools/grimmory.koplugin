@@ -32,19 +32,6 @@ end
 
 local GrimmorySynchronize = require("grimmory/synchronize")
 
-local function synchronizerWithLibraries(target_libraries)
-    return GrimmorySynchronize:new({
-        settings = {
-            getDownloadTargetLibraries = function()
-                return target_libraries
-            end,
-            getDownloadTargetShelves = function()
-                return {}
-            end,
-        },
-    })
-end
-
 describe("GrimmorySynchronize", function()
     describe("book read status", function()
         local synchronizer, progress, callback, remote_status, enabled, remote_ok
@@ -275,79 +262,4 @@ describe("GrimmorySynchronize", function()
         end)
     end)
 
-    describe("isTargetBook", function()
-        it("keeps existing all-library behavior when no target libraries are configured", function()
-            local synchronizer = synchronizerWithLibraries({})
-
-            local result = synchronizer:isTargetBook({
-                primary_file = {
-                    filename = "Example.epub",
-                },
-                library_id = 99,
-            })
-
-            assert.are.equal(true, result)
-        end)
-
-        it("allows books from selected libraries", function()
-            local synchronizer = synchronizerWithLibraries({
-                {
-                    id = 3,
-                    name = "Ebooks",
-                },
-            })
-
-            local result = synchronizer:isTargetBook({
-                primary_file = {
-                    filename = "Example.epub",
-                },
-                library_id = 3,
-            })
-
-            assert.are.equal(true, result)
-        end)
-
-        it("skips books from unselected libraries", function()
-            local synchronizer = synchronizerWithLibraries({
-                {
-                    id = 3,
-                    name = "Ebooks",
-                },
-            })
-
-            local result = synchronizer:isTargetBook({
-                primary_file = {
-                    filename = "Example.m4b",
-                },
-                library_id = 4,
-            })
-
-            assert.are.equal(false, result)
-        end)
-    end)
-
-    describe("isTargetLibrary", function()
-        it("treats all libraries as target when no target libraries are configured", function()
-            local synchronizer = synchronizerWithLibraries({})
-
-            local result = synchronizer:isTargetLibrary({
-                library_id = 4,
-            })
-
-            assert.are.equal(true, result)
-        end)
-
-        it("skips books with missing library IDs when target libraries are configured", function()
-            local synchronizer = synchronizerWithLibraries({
-                {
-                    id = 3,
-                    name = "Ebooks",
-                },
-            })
-
-            local result = synchronizer:isTargetLibrary({})
-
-            assert.are.equal(false, result)
-        end)
-    end)
 end)

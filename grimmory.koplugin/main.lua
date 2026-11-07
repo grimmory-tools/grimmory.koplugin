@@ -433,6 +433,11 @@ function Grimmory:refreshUI()
     self.ui:reloadDocument()
 end
 
+---Run synchronization and apply background metadata notifications to the active UI.
+---@param verbose boolean Whether to display progress and completion messages
+---@param book_path string | nil A single book to sync, or nil for the library
+---@param refresh_book boolean | nil Whether to refresh the single book's file
+---@return nil
 function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
     -- Tell everything to flush so we have data available for our sync
     UIManager:broadcastEvent(Event:new("FlushSettings"))

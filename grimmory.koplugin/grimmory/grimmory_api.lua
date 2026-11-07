@@ -90,10 +90,8 @@ end
 ---@field filename string
 
 ---@class Book
----@field id number
----@field library_id number | nil
----@field library_name string | nil
 ---@field read_status string | nil
+---@field id number
 ---@field added_on number
 ---@field shelves number[]
 ---@field metadata BookMetadata
@@ -111,6 +109,9 @@ end
 ---@field color string
 ---@field style string
 
+---Normalize a Grimmory book DTO, including its optional per-user reading status.
+---@param book table Raw book response
+---@return Book parsed_book
 local function parse_book(book)
     local shelves = {}
 
@@ -142,8 +143,6 @@ local function parse_book(book)
 
     return {
         id = from_json_number(book.id),
-        library_id = from_json_number(book["libraryId"]),
-        library_name = from_json_string(book["libraryName"]),
         read_status = type(book.readStatus) == "string" and book.readStatus or nil,
         added_on = from_json_iso8601(book["addedOn"]),
         shelves = shelves,
@@ -453,9 +452,10 @@ function GrimmoryAPI:getBooksPage(page_number)
     return ok, books, total_count
 end
 
----@param book_id number
----@return boolean ok
----@return Book | nil book
+---Fetch a book and its current per-user reading status.
+---@param book_id number Grimmory book identifier
+---@return boolean ok Whether a valid matching book was returned
+---@return Book | nil book Parsed book, or nil on request/response failure
 function GrimmoryAPI:getBook(book_id)
     local ok, _, body = self:request("GET", "/api/v1/books/" .. tostring(book_id))
     if not ok or type(body) ~= "table" or from_json_number(body.id) ~= book_id then
@@ -561,38 +561,6 @@ function GrimmoryAPI:getShelves()
     end
 
     return ok, shelves
-end
-
-function GrimmoryAPI:getLibraries()
-    local ok, _, body = self:request(
-        "GET",
-        "/api/v1/app/libraries"
-    )
-
-    if not ok then
-        ok, _, body = self:request(
-            "GET",
-            "/api/v1/libraries"
-        )
-    end
-
-    if not ok then
-        logger:err("Could not get libraries", body)
-        return false, body
-    end
-
-    local libraries = {}
-    for _, body_library in ipairs(body) do
-        local library = {
-            id = from_json_number(body_library.id),
-            name = from_json_string(body_library.name),
-            book_count = from_json_number(body_library.bookCount, 0),
-        }
-
-        table.insert(libraries, library)
-    end
-
-    return ok, libraries
 end
 
 ---@param book_id number

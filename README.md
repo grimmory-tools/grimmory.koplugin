@@ -1,10 +1,5 @@
 # grimmory.koplugin
 
-> [!CAUTION]
-> This is a personal fork of the awesome [grimmory.koplugin](https://github.com/grimmory-tools/grimmory.koplugin).
-> If you don't know what this is you're in the wrong place and shouldn't be using this.
-> Instead use the normal plugin from the linked repo above.
-
 > [!WARNING]
 > This is ALPHA software and WILL have bugs or other inadvertent behaviors.
 > 
@@ -67,4 +62,4 @@ to the latest release.
 
 Distributed under the terms of the [AGPL-3.0 License](./LICENSE).
 
-[latest-plugin]: https://github.com/HenryBaby/grimmory.koplugin/releases/latest/download/grimmory.koplugin.zip
+[latest-plugin]: https://github.com/grimmory-tools/grimmory.koplugin/releases/latest/download/grimmory.koplugin.zip
