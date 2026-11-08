@@ -66,6 +66,132 @@ local GrimmoryDocMetadata = require("grimmory/doc_metadata")
 
 describe("GrimmoryDocMetadata", function()
     describe("setBookReadStatus", function()
+        it("resets Unread and Unset once, retaining metadata and permitting new reading", function()
+            for _, raw in ipairs({ "UNREAD", "UNSET" }) do
+                local data = {
+                    summary = { status = "complete", rating = 5, note = "keep" },
+                    percent_finished = 0.9, last_page = 80, last_xpointer = "old",
+                    annotations = { { text = "keep annotation" } }, doc_pages = 100,
+                }
+                local settings = {
+                    readSetting = function(_, key) return data[key] end,
+                    saveSetting = function(_, key, value) data[key] = value end,
+                    delSetting = function(_, key) data[key] = nil end,
+                    flush = spy.new(function() end),
+                }
+                local metadata = GrimmoryDocMetadata:new()
+                metadata.getDocSettings = function() return settings end
+                local changed, reset_at, reset = metadata:setBookReadStatus("book.epub", "new", raw)
+                assert.is_true(changed)
+                assert.is_true(reset)
+                assert.is_number(reset_at)
+                assert.same({ status = "new", rating = 5, note = "keep",
+                    modified = os.date("%Y-%m-%d") }, data.summary)
+                assert.is_nil(data.percent_finished)
+                assert.is_nil(data.last_page)
+                assert.is_nil(data.last_xpointer)
+                assert.same({ { text = "keep annotation" } }, data.annotations)
+                assert.equals(100, data.doc_pages)
+                assert.equals(raw, data.grimmory_read_status)
+                assert.equals(reset_at, metadata:getProgressResetAt("book.epub"))
+                data.summary.status = "reading"
+                data.percent_finished, data.last_page = 0.1, 10
+                assert.is_false(metadata:setBookReadStatus("book.epub", "new", raw))
+                assert.equals(0.1, data.percent_finished)
+                assert.equals(10, data.last_page)
+                assert.equals("reading", data.summary.status)
+                assert.spy(settings.flush).was.called(1)
+                metadata:setBookReadStatus("book.epub", "reading", "READING")
+                local _, _, reset_again = metadata:setBookReadStatus("book.epub", "new", raw)
+                assert.is_true(reset_again)
+                assert.is_nil(data.percent_finished)
+            end
+        end)
+
+        it("observes an idempotent Finished state so a later unread transition resets", function()
+            local data = { summary = { status = "complete" }, grimmory_read_status = "UNREAD" }
+            local settings = {
+                readSetting = function(_, key) return data[key] end,
+                saveSetting = function(_, key, value) data[key] = value end,
+                delSetting = function(_, key) data[key] = nil end,
+                flush = function() end,
+            }
+            local metadata = GrimmoryDocMetadata:new()
+            metadata.getDocSettings = function() return settings end
+            assert.is_true(metadata:setBookReadStatus("book.epub", "complete", "READ"))
+            assert.equals("READ", data.grimmory_read_status)
+            local _, _, reset = metadata:setBookReadStatus("book.epub", "new", "UNREAD")
+            assert.is_true(reset)
+        end)
+
+        it("observes ignored explicit states without changing metadata, then detects the next reset", function()
+            for _, raw in ipairs({ "PARTIALLY_READ", "WONT_READ" }) do
+                local data = { summary = { status = "reading", note = "keep" },
+                    grimmory_read_status = "UNREAD", grimmory_progress_reset_at = 1, percent_finished = 0.2 }
+                local settings = {
+                    readSetting = function(_, key) return data[key] end,
+                    saveSetting = function(_, key, value) data[key] = value end,
+                    delSetting = function(_, key) data[key] = nil end,
+                    flush = spy.new(function() end),
+                }
+                local metadata = GrimmoryDocMetadata:new()
+                metadata.getDocSettings = function() return settings end
+                assert.is_true(metadata:setBookReadStatus("book.epub", nil, raw))
+                assert.equals(raw, data.grimmory_read_status)
+                assert.equals(0.2, data.percent_finished)
+                assert.same({ status = "reading", note = "keep" }, data.summary)
+                local _, _, reset = metadata:setBookReadStatus("book.epub", "new", "UNREAD")
+                assert.is_true(reset)
+                assert.is_nil(data.percent_finished)
+            end
+        end)
+
+        it("mirrors observation-only events into the active document without flushing or changing position", function()
+            local data = { summary = { status = "reading", note = "keep" },
+                grimmory_read_status = "UNREAD", percent_finished = 0.2 }
+            local settings = {
+                readSetting = function(_, key) return data[key] end,
+                saveSetting = function(_, key, value) data[key] = value end,
+                flush = spy.new(function() end),
+            }
+            local metadata = GrimmoryDocMetadata:new({
+                ui = { document = { file = "book.epub" }, doc_settings = settings },
+            })
+            metadata:updateActiveBookReadStatus("book.epub", nil, "WONT_READ", nil, false)
+            assert.equals("WONT_READ", data.grimmory_read_status)
+            assert.same({ status = "reading", note = "keep" }, data.summary)
+            assert.equals(0.2, data.percent_finished)
+            assert.spy(settings.flush).was_not.called()
+        end)
+
+        it("mirrors reset metadata and clears active progress exactly once without flushing", function()
+            local data = { summary = { status = "complete", note = "keep" },
+                percent_finished = 0.8, last_page = 80, last_xpointer = "old" }
+            local settings = {
+                readSetting = function(_, key) return data[key] end,
+                saveSetting = function(_, key, value) data[key] = value end,
+                delSetting = function(_, key) data[key] = nil end,
+                flush = spy.new(function() end),
+            }
+            local metadata = GrimmoryDocMetadata:new({
+                ui = { document = { file = "book.epub" }, doc_settings = settings },
+            })
+            local changed, reset = metadata:updateActiveBookReadStatus("book.epub", "new", "UNREAD", 100, true)
+            assert.is_true(changed)
+            assert.is_true(reset)
+            assert.is_nil(data.percent_finished)
+            assert.is_nil(data.last_page)
+            assert.is_nil(data.last_xpointer)
+            assert.equals("keep", data.summary.note)
+            data.summary.status = "reading"
+            data.percent_finished = 0.1
+            local _, duplicate_reset = metadata:updateActiveBookReadStatus("book.epub", "new", "UNREAD", 100, true)
+            assert.is_false(duplicate_reset)
+            assert.equals(0.1, data.percent_finished)
+            assert.equals("reading", data.summary.status)
+            assert.spy(settings.flush).was_not.called()
+        end)
+
         it("mirrors a background update in the active summary without flushing stale document data", function()
             local data = { summary = { status = "reading", note = "keep", rating = 3 }, last_page = 12 }
             local settings = {

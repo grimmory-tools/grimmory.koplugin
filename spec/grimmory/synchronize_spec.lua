@@ -79,7 +79,10 @@ describe("GrimmorySynchronize", function()
                         end
                     end,
                 },
-                doc_metadata = { setBookReadStatus = spy.new(function() return true end) },
+                doc_metadata = {
+                    setBookReadStatus = spy.new(function() return true end),
+                    getProgressResetAt = function() return nil end,
+                },
                 reading_progress_manager = { pushRemoteProgress = spy.new(function() return true end) },
             })
         end)
@@ -103,7 +106,7 @@ describe("GrimmorySynchronize", function()
             assert.spy(synchronizer.repository.upsertBook).was_not.called()
             assert.spy(synchronizer.api.getBook).was.called_with(synchronizer.api, 7)
             assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
-                synchronizer.doc_metadata, "book.epub", "complete")
+                synchronizer.doc_metadata, "book.epub", "complete", "READ")
             assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was_not.called()
             assert.spy(synchronizer.api.recordSession).was.called(1)
             assert.spy(synchronizer.repository.updateBookSyncTimestamp).was.called_with(
@@ -125,7 +128,7 @@ describe("GrimmorySynchronize", function()
             progress.end_progress = 100
             synchronizer:pushBookProgress(1, callback)
             assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
-                synchronizer.doc_metadata, "book.epub", "reading")
+                synchronizer.doc_metadata, "book.epub", "reading", "READING")
             assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was.called_with(
                 synchronizer.reading_progress_manager, progress)
             assert.spy(synchronizer.repository.updateBookSyncTimestamp).was.called_with(
@@ -136,16 +139,17 @@ describe("GrimmorySynchronize", function()
             local cases = {
                 { "READ", "complete" }, { "READING", "reading" }, { "RE_READING", "reading" },
                 { "PAUSED", "abandoned" }, { "ABANDONED", "abandoned" },
+                { "UNREAD", "new" }, { "UNSET", "new" },
             }
             for _, case in ipairs(cases) do
                 synchronizer:applyBookReadStatus("book.epub", { read_status = case[1] }, callback)
                 assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
-                    synchronizer.doc_metadata, "book.epub", case[2])
+                    synchronizer.doc_metadata, "book.epub", case[2], case[1])
                 assert.spy(callback).was.called_with({
-                    state = "book-status-updated", book_path = "book.epub", status = case[2],
+                    state = "book-status-updated", book_path = "book.epub", status = case[2], read_status = case[1],
                 })
             end
-            assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called(5)
+            assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called(7)
         end)
 
         it("emits no update when the local status already matches", function()
@@ -161,14 +165,56 @@ describe("GrimmorySynchronize", function()
             assert.spy(synchronizer.repository.updateBookSyncTimestamp).was_not.called()
         end)
 
+        it("defers pre-reset progress but uploads fresh reading while remote stays Unread or Unset", function()
+            for _, raw in ipairs({ "UNREAD", "UNSET" }) do
+                remote_status = raw
+                synchronizer.doc_metadata.getProgressResetAt = function() return 20 end
+                progress.end_time = 20
+                synchronizer:pushBookProgress(1, callback)
+                progress.end_time = 21
+                synchronizer:pushBookProgress(1, callback)
+            end
+            assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was.called(2)
+            assert.spy(synchronizer.repository.updateBookSyncTimestamp).was.called(2)
+        end)
+
+        it("passes reset markers and raw status to the parent notification", function()
+            synchronizer.doc_metadata.setBookReadStatus = function(_, _, status, raw)
+                assert.equals("new", status)
+                assert.equals("UNSET", raw)
+                return true, 100, true
+            end
+            synchronizer:applyBookReadStatus("book.epub", { read_status = "UNSET" }, callback)
+            assert.spy(callback).was.called_with({ state = "book-status-updated", book_path = "book.epub",
+                status = "new", read_status = "UNSET", reset_at = 100, was_reset = true })
+        end)
+
+        it("resets a downloaded book before requesting its remote progress", function()
+            local util = require("util")
+            local old_exists = util.fileExists
+            util.fileExists = function() return false end
+            synchronizer.getBookDownloadPath = function() return "book.epub" end
+            synchronizer.downloadBook = function() return true end
+            synchronizer.associateWithShelves = function() end
+            local reset = false
+            synchronizer.doc_metadata.setBookReadStatus = function() reset = true; return true, 100, true end
+            synchronizer.pullBookProgress = function() assert.is_true(reset) end
+            synchronizer:pullBook({ id = 7, read_status = "UNREAD" }, callback)
+            util.fileExists = old_exists
+        end)
+
         it("uploads normal progress without changing status for all other statuses", function()
-            for _, status in ipairs({ "UNREAD", "PARTIALLY_READ", "WONT_READ", "UNSET", "unknown", false }) do
+            for _, status in ipairs({ "PARTIALLY_READ", "WONT_READ", "unknown", false }) do
                 remote_status = status
                 synchronizer:pushBookProgress(1, callback)
             end
-            assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was.called(6)
+            assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was.called(4)
             synchronizer:applyBookReadStatus("book.epub", {}, callback)
-            assert.spy(synchronizer.doc_metadata.setBookReadStatus).was_not.called()
+            assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called(2)
+            assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
+                synchronizer.doc_metadata, "book.epub", nil, "PARTIALLY_READ")
+            assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
+                synchronizer.doc_metadata, "book.epub", nil, "WONT_READ")
         end)
 
         it("does not retrieve or apply status when disabled", function()
@@ -191,9 +237,10 @@ describe("GrimmorySynchronize", function()
             synchronizer:pullBooks(callback)
             util.fileExists, util.partialMD5 = old_exists, old_md5
             assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
-                synchronizer.doc_metadata, "book.epub", "abandoned")
+                synchronizer.doc_metadata, "book.epub", "abandoned", remote_status)
             assert.spy(callback).was.called_with({
-                state = "book-status-updated", book_path = "book.epub", status = "abandoned",
+                state = "book-status-updated", book_path = "book.epub",
+                status = "abandoned", read_status = remote_status,
             })
         end)
 
@@ -213,7 +260,7 @@ describe("GrimmorySynchronize", function()
             util.fileExists = old_exists
             assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called(2)
             assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
-                synchronizer.doc_metadata, "book.epub", "reading")
+                synchronizer.doc_metadata, "book.epub", "reading", "RE_READING")
         end)
 
         it("pulls status during individual sync even without reading progress", function()
@@ -225,7 +272,7 @@ describe("GrimmorySynchronize", function()
             synchronizer.pullBookProgress = function() end
             synchronizer:synchronizeBook("book.epub", false, callback)
             assert.spy(synchronizer.doc_metadata.setBookReadStatus).was.called_with(
-                synchronizer.doc_metadata, "book.epub", "abandoned")
+                synchronizer.doc_metadata, "book.epub", "abandoned", remote_status)
             assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was_not.called()
         end)
 
@@ -257,7 +304,7 @@ describe("GrimmorySynchronize", function()
             assert.spy(synchronizer.api.getBook).was.called(2)
             assert.spy(synchronizer.reading_progress_manager.pushRemoteProgress).was.called(1)
             assert.spy(callback).was.called_with({
-                state = "book-status-updated", book_path = "book.epub", status = "complete",
+                state = "book-status-updated", book_path = "book.epub", status = "complete", read_status = "READ",
             })
         end)
     end)

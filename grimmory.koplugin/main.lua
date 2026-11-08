@@ -515,8 +515,18 @@ function Grimmory:onGrimmorySync(verbose, book_path, refresh_book)
                 end
 
                 if progress.state == "book-status-updated" then
-                    self.doc_metadata:updateActiveBookReadStatus(progress.book_path, progress.status)
-                    BookList.setBookInfoCacheProperty(progress.book_path, "status", progress.status)
+                    local _, reset = self.doc_metadata:updateActiveBookReadStatus(
+                        progress.book_path, progress.status, progress.read_status,
+                        progress.reset_at, progress.was_reset)
+                    if reset then
+                        self.reading_progress_manager:resetActiveBookPosition(progress.book_path)
+                    end
+                    if progress.status then
+                        BookList.setBookInfoCacheProperty(progress.book_path, "status", progress.status)
+                    end
+                    if progress.was_reset then
+                        BookList.setBookInfoCacheProperty(progress.book_path, "percent_finished", nil)
+                    end
                     UIManager:broadcastEvent(Event:new("InvalidateMetadataCache", progress.book_path))
                 end
 

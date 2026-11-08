@@ -202,10 +202,10 @@ end
 
 ---Update only the summary status and modification date, retaining all other fields.
 ---@param settings table Document settings handle
----@param status string KOReader status: complete, reading, or abandoned
+---@param status string KOReader status: new, complete, reading, or abandoned
 ---@return boolean changed
 local function setReadStatusSummary(settings, status)
-    if status ~= "complete" and status ~= "reading" and status ~= "abandoned" then
+    if status ~= "complete" and status ~= "reading" and status ~= "abandoned" and status ~= "new" then
         return false
     end
     local summary = settings:readSetting("summary") or {}
@@ -220,27 +220,77 @@ end
 
 -- Mirror background status changes without flushing stale parent document data.
 ---@param path string Book path updated by the background sync
----@param status string Mapped KOReader status
+---@param status string | nil Mapped KOReader status, or nil for observation only
+---@param read_status string | nil Observed Grimmory status
+---@param reset_at number | nil Reset boundary from the background process
+---@param was_reset boolean | nil Whether this notification resets reading position
 ---@return boolean changed Whether the active document summary changed
-function DocMetadata:updateActiveBookReadStatus(path, status)
+---@return boolean reset Whether the active position needs navigation to the start
+function DocMetadata:updateActiveBookReadStatus(path, status, read_status, reset_at, was_reset)
     if self.ui and self.ui.document and self.ui.document.file == path and self.ui.doc_settings then
-        return setReadStatusSummary(self.ui.doc_settings, status)
+        local settings = self.ui.doc_settings
+        local reset = was_reset and (settings:readSetting("grimmory_progress_reset_at") ~= reset_at
+            or settings:readSetting("grimmory_read_status") ~= read_status)
+        if was_reset and not reset then return false, false end
+        if read_status then settings:saveSetting("grimmory_read_status", read_status) end
+        if reset_at then settings:saveSetting("grimmory_progress_reset_at", reset_at) end
+        if reset then
+            settings:delSetting("percent_finished")
+            settings:delSetting("last_page")
+            settings:delSetting("last_xpointer")
+        end
+        local changed = setReadStatusSummary(settings, status)
+        return changed, reset == true
     end
     return false
 end
 
--- A reading status is independent of the last reading position.
+-- Only a newly observed New status clears the saved reading position.
 ---@param path string Book path whose sidecar should be updated
----@param status string KOReader status: complete, reading, or abandoned
+---@param status string | nil KOReader status, or nil to observe an ignored explicit state
+---@param read_status string | nil Observed Grimmory status used to detect one-time resets
 ---@return boolean changed Whether a changed summary was persisted
-function DocMetadata:setBookReadStatus(path, status)
-    local settings = self:getDocSettings(path)
-    if not setReadStatusSummary(settings, status) then
+---@return number | nil reset_at Latest reset boundary
+---@return boolean | nil was_reset Whether this update cleared reading position
+function DocMetadata:setBookReadStatus(path, status, read_status)
+    if status == "new" and read_status ~= "UNREAD" and read_status ~= "UNSET" then
         return false
     end
+    local observe_only = status == nil and (read_status == "PARTIALLY_READ" or read_status == "WONT_READ")
+    if not observe_only and status ~= "new" and status ~= "reading" and status ~= "complete"
+        and status ~= "abandoned" then
+        return false
+    end
+    local settings = self:getDocSettings(path)
+    local observed = read_status ~= nil and settings:readSetting("grimmory_read_status") ~= read_status
+    local was_reset = status == "new" and observed
+    local reset_at = settings:readSetting("grimmory_progress_reset_at")
+    if status == "new" and not was_reset then
+        return false
+    end
+    local changed = setReadStatusSummary(settings, status)
+    if not changed and not observed then return false end
+    if observed then settings:saveSetting("grimmory_read_status", read_status) end
+    if was_reset then
+        reset_at = os.time()
+        settings:saveSetting("grimmory_progress_reset_at", reset_at)
+        settings:delSetting("percent_finished")
+        settings:delSetting("last_page")
+        settings:delSetting("last_xpointer")
+    end
     settings:flush()
-    BookList.setBookInfoCacheProperty(path, "status", status)
-    return true
+    if status then BookList.setBookInfoCacheProperty(path, "status", status) end
+    if was_reset then
+        BookList.setBookInfoCacheProperty(path, "percent_finished", nil)
+    end
+    return true, reset_at, was_reset
+end
+
+---Return the local boundary before which progress belongs to an earlier read.
+---@param path string Book path
+---@return number | nil reset_at Unix timestamp of the latest observed reset
+function DocMetadata:getProgressResetAt(path)
+    return self:getDocSettings(path):readSetting("grimmory_progress_reset_at")
 end
 
 ---@param path string

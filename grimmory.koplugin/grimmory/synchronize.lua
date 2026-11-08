@@ -22,6 +22,10 @@ local READ_STATUSES = {
     RE_READING = { status = "reading", preserve = true },
     PAUSED = { status = "abandoned", preserve = true },
     ABANDONED = { status = "abandoned", preserve = true },
+    UNREAD = { status = "new" },
+    UNSET = { status = "new" },
+    PARTIALLY_READ = {},
+    WONT_READ = {},
 }
 
 function GrimmorySynchronize:new(o)
@@ -41,12 +45,15 @@ function GrimmorySynchronize:applyBookReadStatus(book_path, book, callback)
     if not self.settings:getSyncBookReadStatus() or not mapping then
         return
     end
-    if self.doc_metadata:setBookReadStatus(book_path, mapping.status) and callback then
-        callback({ state = "book-status-updated", book_path = book_path, status = mapping.status })
+    local changed, reset_at, was_reset = self.doc_metadata:setBookReadStatus(
+        book_path, mapping.status, book.read_status)
+    if changed and callback then
+        callback({ state = "book-status-updated", book_path = book_path, status = mapping.status,
+            read_status = book.read_status, reset_at = reset_at, was_reset = was_reset })
     end
 end
 
----Fetch and apply status without changing reading position or reversing the sync.
+---Fetch and apply status, clearing position only for newly observed Unread or Unset.
 ---@param book_path string Existing local book path
 ---@param grimmory_id number | nil Associated Grimmory identifier
 ---@param callback function | nil Receives status-change events
@@ -123,6 +130,10 @@ function GrimmorySynchronize:pushBookProgress(book_id, callback)
         -- Keep the pending progress for a later retry if the status is unavailable.
         local mapping = READ_STATUSES[read_status]
         if not status_ok or (mapping and mapping.preserve) then
+            return
+        end
+        local reset_at = self.doc_metadata:getProgressResetAt(progress.book_path)
+        if reset_at and (not progress.end_time or progress.end_time <= reset_at) then
             return
         end
     end
@@ -808,8 +819,8 @@ function GrimmorySynchronize:pullBook(book, callback)
         -- After we're done, if the book exists we should attach it
         -- to associated shelves and pull the book progress.
         self:associateWithShelves(download_path, book.shelves or {})
-        self:pullBookProgress(download_path)
         self:applyBookReadStatus(download_path, book, callback)
+        self:pullBookProgress(download_path)
     end
 
     return download_path, is_downloaded
@@ -1058,10 +1069,10 @@ function GrimmorySynchronize:synchronizeBook(book_path, refresh_book, callback)
         total_books = 1,
     })
 
-    -- Then, try to get progress
-    self:pullBookProgress(book_path)
     -- A progress upload may have completed the book on Grimmory.
+    -- Observe a reset before considering a potentially older remote position.
     self:pullBookReadStatus(book_path, grimmory_id, callback)
+    self:pullBookProgress(book_path)
 
     logger:info("Done synchronizing book:", book_path)
 end

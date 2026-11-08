@@ -158,8 +158,11 @@ function ReadingRecorder:onPageUpdate()
     self:emitSessionEvent(self.session_id, "page")
 end
 
-function ReadingRecorder:onSessionEnd()
-    if self.session_id ~= nil then
+---Close the current session, optionally retaining only its previously recorded events.
+---@param skip_position boolean | nil True when a remote reset invalidates the current position
+---@return nil
+function ReadingRecorder:onSessionEnd(skip_position)
+    if self.session_id ~= nil and not skip_position then
         self:emitSessionEvent(self.session_id, "session-end")
     end
 

@@ -57,6 +57,12 @@ end
 function ReadingProgressManager:getNewerProgressForBook(book_path)
     -- Skip most recent session
     local local_progress = self:getLocalProgressForBook(book_path)
+    if self.settings:getSyncBookReadStatus() and local_progress then
+        local reset_at = self.doc_metadata:getProgressResetAt(book_path)
+        if reset_at and (not local_progress.end_time or local_progress.end_time <= reset_at) then
+            local_progress = nil
+        end
+    end
     local remote_name, remote_id, remote_progress = self:getRemoteProgressForBook(book_path)
 
     if compareProgress(local_progress, remote_progress) <= 0 then
@@ -196,6 +202,13 @@ function ReadingProgressManager:getRemoteProgressForBook(book_path)
         return nil, nil, nil
     end
 
+    if self.settings:getSyncBookReadStatus() then
+        local reset_at = self.doc_metadata:getProgressResetAt(book_path)
+        if reset_at and (type(progress.timestamp) ~= "number" or progress.timestamp <= reset_at) then
+            return nil, nil, nil
+        end
+    end
+
     if type(progress.percentage) ~= "number" then
         -- This is sometimes a `json.util.null` - perhaps if the record
         -- exists but has been reset?  The value is `null` in the JSON
@@ -225,8 +238,30 @@ function ReadingProgressManager:getRemoteProgressForBook(book_path)
     return source_name, source_id, source_progress
 end
 
+---Navigate an active book to its beginning without recording its obsolete position.
+---@param book_path string Book whose position was reset
+---@return boolean reset Whether an active book was moved
+function ReadingProgressManager:resetActiveBookPosition(book_path)
+    if self.ui and self.ui.document and self.ui.document.file == book_path then
+        self.reading_recorder:onSessionEnd(true)
+        if self.ui.document.info.has_pages then
+            self.ui:handleEvent(Event:new("GotoPage", 1))
+        else
+            self.ui:handleEvent(Event:new("GoToPercent", 0))
+        end
+        return true
+    end
+    return false
+end
+
 ---@param progress ReadingSessionProgress
 function ReadingProgressManager:applyProgress(progress)
+    if self.settings:getSyncBookReadStatus() then
+        local reset_at = self.doc_metadata:getProgressResetAt(progress.book_path)
+        if reset_at and (type(progress.end_time) ~= "number" or progress.end_time <= reset_at) then
+            return
+        end
+    end
     -- If book path is the currently open book, use the go to command
     -- DocMetadata -> "last_xpointer" to progress
     if self.ui.document and progress.book_path == self.ui.document.file then
